@@ -43,9 +43,15 @@ export function hook_lib_call(
   arg: any = null
 ) {
   mu.mem_write(address, NOP_CODE);
-  mu.hook_add(uc.HOOK_CODE, (...arg) => {
-    callback(...arg);
-  }, arg, address, address + 4);
+  mu.hook_add(
+    uc.HOOK_CODE,
+    (...arg) => {
+      callback(...arg);
+    },
+    arg,
+    address,
+    address + 4
+  );
 }
 
 export function reg_read_uint32(mu: Uc, reg: number): number {
@@ -53,15 +59,9 @@ export function reg_read_uint32(mu: Uc, reg: number): number {
 }
 
 export function reg_write_uint32(mu: Uc, reg: number, value: number) {
-  // console.log(reg,uc)
   mu.reg_write(reg, to_bytes_uint32(value));
 }
 
 export function align_to_0x1000(number: number): number {
   return Math.floor((number + 0xfff) / 0x1000) * 0x1000;
 }
-
-/*
-def align_to_0x1000(number):
-    return ((number + 0xFFF) // 0x1000) * 0x1000
-*/

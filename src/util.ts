@@ -17,13 +17,6 @@ export function from_bytes_uint32(bytes: Uint8Array): number {
   );
 }
 
-export function play_wav(wav: Uint8Array) {
-  const blob = new Blob([wav], { type: "audio/wav" });
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  audio.play();
-}
-
 export function convert_sjis(str: string): Uint8Array {
   const unicodeArray = Encoding.stringToCode(str);
   const sjisArray = Encoding.convert(unicodeArray, {

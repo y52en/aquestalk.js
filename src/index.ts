@@ -1,6 +1,11 @@
 import JSZip from "jszip";
 import { call, push } from "./x86_util";
-import { convert_sjis, from_bytes_uint32, to_bytes_uint32, uint8array_concat } from "./util";
+import {
+  convert_sjis,
+  from_bytes_uint32,
+  to_bytes_uint32,
+  uint8array_concat,
+} from "./util";
 import {
   free_hook,
   malloc_hook,
@@ -119,16 +124,8 @@ export class AquesTalk {
     reg_write_uint32(mu, uc.X86_REG_EIP, return_fn_addr);
     call(mu, this.AquesTalk_Synthe);
 
-    mu.hook_add(uc.HOOK_CODE, (mu: any, ..._args:any[]) => {
-      console.log(`hook: `, mu.reg_read(uc.X86_REG_EIP, 4));
-    },null,0,0);
     try {
-      mu.emu_start(
-        reg_read_uint32(mu, uc.X86_REG_EIP),
-        return_fn_addr,
-        0,
-        0
-      );
+      mu.emu_start(reg_read_uint32(mu, uc.X86_REG_EIP), return_fn_addr, 0, 0);
     } catch (e) {
       console.error(e);
       console.error(
@@ -144,16 +141,15 @@ export class AquesTalk {
       throw e;
     }
 
-    console.log(`*size: `, mu.mem_read(size, 4));
-    console.log(
-      `(return value) eax: `,
-      reg_read_uint32(mu, uc.X86_REG_EAX)
-    );
+    const size_value = from_bytes_uint32(mu.mem_read(size, 4));
+    const return_value = reg_read_uint32(mu, uc.X86_REG_EAX);
+    console.log(`(return value) eax: `, return_value);
+    console.log(`*size: `, size_value);
 
-    const result = mu.mem_read(
-      reg_read_uint32(mu, uc.X86_REG_EAX),
-      from_bytes_uint32(mu.mem_read(size, 4))
-    );
+    if (return_value === 0) {
+      throw new Error(`AquesTalk_Synthe error. ERROR CODE: ${size_value}`);
+    }
+    const result = mu.mem_read(return_value, size_value);
 
     this.#reset();
     return result;
@@ -167,5 +163,5 @@ export async function loadAquesTalk(zippath: string, dllpath: string) {
   const zipbin = await (await fetch(zippath)).arrayBuffer();
   const ziproot = await zip.loadAsync(zipbin);
   const dllfile = await ziproot.files[dllpath].async("arraybuffer");
-  return new AquesTalk(dllfile,new uc.Unicorn(uc.ARCH_X86, uc.MODE_32));
+  return new AquesTalk(dllfile, new uc.Unicorn(uc.ARCH_X86, uc.MODE_32));
 }

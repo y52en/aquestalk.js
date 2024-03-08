@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import "./App.css";
 import { AquesTalk, loadAquesTalk } from "../../src/index.js";
 
-function play_wav(wav: Uint8Array) {
+async function play_wav(wav: Uint8Array) {
   const blob = new Blob([wav], { type: "audio/wav" });
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
-  audio.play();
+  await audio.play();
+  URL.revokeObjectURL(url);
 }
 
 function App() {
@@ -14,24 +15,29 @@ function App() {
   const [talkEngine, setTalkEngine] = useState<AquesTalk | null>(null);
   useEffect(() => {
     (async () => {
-      setTalkEngine(await loadAquesTalk("./f1.zip", "f1/AquesTalk.dll"))
+      setTalkEngine(await loadAquesTalk("./f1.zip", "f1/AquesTalk.dll"));
     })();
   }, []);
 
   return (
     <>
-      {/* <Suspense fallback={<div>Loading...</div>}> */}
       <div className="card">
         <button
-          onClick={async() =>
-          {
+          onClick={async () => {
+            if (talkEngine == null) {
+              console.error("talkEngine is null");
+              alert("talkEngine is null");
+              return;
+            }
             console.time("talkEngine.run");
-            talkEngine
-              ? play_wav(await talkEngine.run(talkText))
-              : console.error("talkEngine is null")
+            try {
+              play_wav(await talkEngine.run(talkText));
+            } catch (e) {
+              console.error(e);
+              alert(e);
+            }
             console.timeEnd("talkEngine.run");
-          }
-          }
+          }}
         >
           PLAY!
         </button>
@@ -42,7 +48,6 @@ function App() {
           onChange={(e) => setTalkText(e.target.value)}
         />
       </div>
-      {/* </Suspense> */}
     </>
   );
 }
