@@ -1,0 +1,24 @@
+{
+  "name": "aquestalk.js",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsc -w"
+  },
+  "dependencies": {
+    "encoding-japanese": "^2.0.0",
+    "jszip": "^3.10.1"
+  },
+  "devDependencies": {
+    "@types/encoding-japanese": "^2.0.5",
+    "typescript": "^5.3.3"
+  },
+  "exports": {
+    "import": "./dist/index.js"
+  }
+}

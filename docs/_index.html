@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>My Docs</title>
+  </head>
+  <body>
+    <h1>My Docs</h1>
+    <p>Welcome to my documentation!</p>
+    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script> -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/unicorn.js/1.0/unicorn.min.js"></script>
+    <!-- <script type="module" src="../dist/index.js"></script> -->
+
+    <script type="module">
+        import { loadAquesTalk } from "../dist/index.js";
+        loadAquesTalk("./f1.zip", "f1/AquesTalk.dll").then((a) => {
+            console.log(a);
+        });
+    </script>
+  </body>
+</html>
