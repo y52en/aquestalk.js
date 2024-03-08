@@ -1,13 +1,14 @@
 # AquesTalk.js
 
 途中でやる気をなくしてしまったプロジェクト\
-DEMO : [https://y52en.github.io/AquesTalk.js](https://y52en.github.io/AquesTalk.js)
+DEMO : [https://y52en.github.io/aquestalk.js](https://y52en.github.io/aquestalk.js)
 
 TODO
   - [ ] 使い方を書く
   - [ ] f1以外の声を使えるようにする
     - [ ] そのためにpeをparseして諸々する
   - [ ] リファクタリング！！！！！
+  - [ ] エラー表示をする(今はエラーが出ても何も表示されない)
 
 
 やる気をなくした最大の原因は、非常に遅いこと\
