@@ -1,0 +1,12 @@
+XHR type: undefined
+Exports: [ 'CPU', 'V86', 'default' ]
+V86Starter: [Function: N]
+CPU Class: undefined
+Emulator keys: [
+  'cpu_is_running',
+  'cpu_exception_hook',
+  'bus',
+  'emulator_bus',
+  'zstd_worker',
+  'zstd_worker_request_id'
+]

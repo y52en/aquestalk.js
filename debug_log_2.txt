@@ -1,0 +1,20 @@
+Initializing v86 with wasm_path: /app/node_modules/v86/build/v86.wasm
+v86 loading: /app/node_modules/v86/build/v86.wasm
+Emulator created
+Web browser doesn't support Web Audio API
+v86 loading: undefined
+node:internal/fs/promises:633
+  path = getValidatedPath(path);
+         ^
+
+TypeError [ERR_INVALID_ARG_TYPE]: The "path" argument must be of type string or an instance of Buffer or URL. Received undefined
+    at open (node:internal/fs/promises:633:10)
+    at Module.readFile (node:internal/fs/promises:1235:20)
+    at oa (file:///app/test/libv86_debug.mjs:6:417)
+    at N.<anonymous> (file:///app/test/libv86_debug.mjs:282:413)
+    at N.continue_init (file:///app/test/libv86_debug.mjs:283:416)
+    at file:///app/test/libv86_debug.mjs:274:120 {
+  code: 'ERR_INVALID_ARG_TYPE'
+}
+
+Node.js v22.22.0

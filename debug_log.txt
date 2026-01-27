@@ -1,0 +1,15 @@
+Initializing v86 with wasm_path: /app/node_modules/v86/build/v86.wasm
+v86 loading: /app/node_modules/v86/build/v86.wasm
+Emulator created
+file:///app/test/libv86_debug.mjs:215
+(window.removeEventListener("keyup",c,!1),window.removeEventListener("keydown",d,!1),window.removeEventListener("blur",e,!1),window.removeEventListener("input",f,!1))};this.init=function(){"undefined"!==typeof window&&(this.destroy(),window.addEventListener("keyup",c,!1),window.addEventListener("keydown",d,!1),window.addEventListener("blur",e,!1),window.addEventListener("input",f,!1))};this.init();this.simulate_press=function(v){v={keyCode:v};g(v,!0);g(v,!1)};this.simulate_char=function(v){var L=
+        ^
+
+TypeError: window.removeEventListener is not a function
+    at Zb.destroy (file:///app/test/libv86_debug.mjs:215:9)
+    at Zb.init (file:///app/test/libv86_debug.mjs:215:225)
+    at new Zb (file:///app/test/libv86_debug.mjs:215:395)
+    at N.continue_init (file:///app/test/libv86_debug.mjs:279:163)
+    at file:///app/test/libv86_debug.mjs:274:120
+
+Node.js v22.22.0

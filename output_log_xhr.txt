@@ -1,0 +1,28 @@
+XHR type: undefined
+Exports: [ 'CPU', 'V86', 'default' ]
+V86Starter: [Function: N]
+CPU Class: undefined
+Emulator keys: [
+  'cpu_is_running',
+  'cpu_exception_hook',
+  'bus',
+  'emulator_bus',
+  'zstd_worker',
+  'zstd_worker_request_id'
+]
+Web browser doesn't support Web Audio API
+node:internal/fs/promises:633
+  path = getValidatedPath(path);
+         ^
+
+TypeError [ERR_INVALID_ARG_TYPE]: The "path" argument must be of type string or an instance of Buffer or URL. Received undefined
+    at open (node:internal/fs/promises:633:10)
+    at Module.readFile (node:internal/fs/promises:1235:20)
+    at oa (file:///app/test/libv86_patched.mjs:6:322)
+    at N.<anonymous> (file:///app/test/libv86_patched.mjs:282:413)
+    at N.continue_init (file:///app/test/libv86_patched.mjs:283:416)
+    at file:///app/test/libv86_patched.mjs:274:120 {
+  code: 'ERR_INVALID_ARG_TYPE'
+}
+
+Node.js v22.22.0

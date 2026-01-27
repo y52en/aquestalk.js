@@ -1,0 +1,20 @@
+Initializing v86 with wasm_path: /app/node_modules/v86/build/v86.wasm
+v86 loading: /app/node_modules/v86/build/v86.wasm
+Emulator created
+Web browser doesn't support Web Audio API
+v86 loading: bios.bin
+node:internal/fs/promises:636
+  return new FileHandle(await PromisePrototypeThen(
+                        ^
+
+Error: ENOENT: no such file or directory, open 'bios.bin'
+    at async open (node:internal/fs/promises:636:25)
+    at async Module.readFile (node:internal/fs/promises:1235:14)
+    at async oa (file:///app/test/libv86_debug.mjs:6:467) {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'bios.bin'
+}
+
+Node.js v22.22.0

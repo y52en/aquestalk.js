@@ -1,0 +1,17 @@
+Initializing v86 with wasm_path: /app/node_modules/v86/build/v86.wasm
+v86 loading: /app/node_modules/v86/build/v86.wasm
+Emulator created
+Web browser doesn't support Web Audio API
+v86 loading: undefined
+file:///app/test/libv86_debug.mjs:282
+b.filesystem.baseurl;let q=new kc;h&&(q=new lc(q,h,this.zstd_decompress.bind(this)));e.fs9p=this.fs9p=new J(q);if(f){if("object"===typeof f){var l=f.size;f=f.url}g.push({name:"fs9p_json",url:f,size:l,as_json:!0})}}var m=this,n=g.length,p=function(q){if(q===n)setTimeout(d.bind(this),0);else{var r=g[q];r.loadable?(r.loadable.onload=function(){c.call(this,r.name,r.loadable);p(q+1)}.bind(this),r.loadable.load()):oa(r.url,{done:function(x){r.url.endsWith(".zst")&&"initial_state"!==r.name&&(x=this.zstd_decompress(r.size,
+                                                                                                                                                                                                                                                                                                                                                                                                                                                             ^
+
+TypeError: Cannot read properties of undefined (reading 'endsWith')
+    at N.<anonymous> (file:///app/test/libv86_debug.mjs:282:446)
+    at oa (file:///app/test/libv86_debug.mjs:6:198)
+    at N.<anonymous> (file:///app/test/libv86_debug.mjs:282:413)
+    at N.continue_init (file:///app/test/libv86_debug.mjs:283:416)
+    at file:///app/test/libv86_debug.mjs:274:120
+
+Node.js v22.22.0
