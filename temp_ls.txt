@@ -1,3 +1,0 @@
-total 20M
--rw-rw-r-- 1 jules jules 20M Jan 26 18:05 unicorn.min.js
--rw-rw-r-- 1 jules jules  14 Jan 26 18:05 unicorn.wasm

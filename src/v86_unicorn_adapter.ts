@@ -1,6 +1,6 @@
 
 // @ts-ignore
-import { V86 } from '../test/libv86_debug.mjs';
+import { V86 } from './lib/libv86_debug.mjs';
 import * as path from 'path';
 
 export const UC_X86_REG_EAX = 0;
@@ -26,6 +26,8 @@ export class V86UnicornAdapter {
     private mapped_memory: Map<number, {size: number, perms: number}>;
 
     constructor() {
+        // v86.wasm is still in node_modules, bios in test (fixtures).
+        // In production, these paths should probably be configurable or bundled differently.
         const wasmPath = path.join(process.cwd(), 'node_modules/v86/build/v86.wasm');
         const biosPath = path.join(process.cwd(), 'test/bios.bin');
         const vgaPath = path.join(process.cwd(), 'test/vga_bios.bin');
@@ -55,13 +57,12 @@ export class V86UnicornAdapter {
                 if (resolved) return;
                 resolved = true;
 
-                // V86 structure might vary (wrapper vs core)
+                // Fallback search for cpu object
                 if (this.v86.cpu) {
                     this.cpu = this.v86.cpu;
                 } else if (this.v86.v86 && this.v86.v86.cpu) {
                     this.cpu = this.v86.v86.cpu;
                 } else {
-                     // Fallback search
                      for (const key of Object.keys(this.v86)) {
                         const val = this.v86[key];
                         if (val && typeof val === 'object' && val.constructor && (val.constructor.name === 'O' || val.mem8)) {
@@ -147,6 +148,8 @@ export class V86UnicornAdapter {
             if (begin === end || end === 0) {
                  this.hooks.set(begin, callback);
                  this.hook_data.set(begin, user_data);
+                 // IMPORTANT: Write HLT (0xF4) to the address to stop execution
+                 this.mem_write(begin, new Uint8Array([0xF4]));
             }
         }
     }
