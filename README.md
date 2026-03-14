@@ -1,5 +1,7 @@
 # AquesTalk.js
 
+![thumbnail](./image.png)
+
 AquesTalkをWebAssembly(v86)環境で動かし、ブラウザやNode.jsで簡単に利用できるようにしたライブラリです。
 
 DEMO : [https://y52en.github.io/aquestalk.js](https://y52en.github.io/aquestalk.js)
@@ -93,3 +95,8 @@ AquesTalkの著作権は株式会社アクエストに帰属します。
 
 ## 参考
 - [AquesTalk 開発者ガイド (Linux版)](https://www.a-quest.com/archive/manual/prog_guide_linux.pdf)
+
+
+## クレジット
+
+ゆっくり立ち絵:	https://kumasannosozaiya.studio.site/
