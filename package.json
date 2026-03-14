@@ -1,11 +1,21 @@
 {
   "name": "aquestalk.js",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
+  "version": "1.0.2",
+  "description": "AquesTalk on WebAssembly(v86)",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "voices",
+    "readme.md",
+    "LICENSE"
+  ],
+  "exports": {
+    "import": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
   "scripts": {
     "build": "tsc",
     "start": "tsc -w",
@@ -24,7 +34,5 @@
     "typescript": "^5.3.3",
     "vitest": "^4.1.0"
   },
-  "exports": {
-    "import": "./dist/index.js"
-  }
+  "license": "MIT"
 }

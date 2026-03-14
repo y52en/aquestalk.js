@@ -32,6 +32,50 @@ const _strncmp =
   "8b ff 55 8b ec 53 56 8b 75 10 33 d2 57 85 f6 0f 84 8a 00 00 00 83 fe 04 72 68 8d 7e fc 85 ff 74 61 8b 4d 0c 8b 45 08 8a 18 83 c0 04 83 c1 04 84 db 74 44 3a 59 fc 75 3f 8a 58 fd 84 db 74 32 3a 59 fd 75 2d 8a 58 fe 84 db 74 20 3a 59 fe 75 1b 8a 58 ff 84 db 74 0e 3a 59 ff 75 09 83 c2 04 3b d7 72 c4 eb 23 0f b6 49 ff eb 10 0f b6 49 fe eb 0a 0f b6 49 fd eb 04 0f b6 49 fc 0f b6 c3 2b c1 eb 1f 8b 4d 0c 8b 45 08 3b d6 73 13 2b c1 8a 1c 08 84 db 74 11 3a 19 75 0d 42 41 3b d6 72 ef 33 c0 5f 5e 5b 5d c3 0f b6 09 eb d0";
 const strncmp = new Uint8Array(_strncmp.split(" ").map((v) => parseInt(v, 16)));
 
+export type Voice = "dvd" | "f1" | "f2" | "imd1" | "jgr" | "m1" | "m2" | "r1";
+
+const VOICE_MAP: Record<Voice, { zip: URL; dll: string }> = {
+  dvd: {
+    zip: new URL("../voices/dvd.zip", import.meta.url),
+    dll: "dvd/AquesTalk.dll",
+  },
+  f1: {
+    zip: new URL("../voices/f1.zip", import.meta.url),
+    dll: "f1/AquesTalk.dll",
+  },
+  f2: {
+    zip: new URL("../voices/f2.zip", import.meta.url),
+    dll: "f2/AquesTalk.dll",
+  },
+  imd1: {
+    zip: new URL("../voices/imd1.zip", import.meta.url),
+    dll: "imd1/AquesTalk.dll",
+  },
+  jgr: {
+    zip: new URL("../voices/jgr.zip", import.meta.url),
+    dll: "jgr/AquesTalk.dll",
+  },
+  m1: {
+    zip: new URL("../voices/m1.zip", import.meta.url),
+    dll: "m1/AquesTalk.dll",
+  },
+  m2: {
+    zip: new URL("../voices/m2.zip", import.meta.url),
+    dll: "m2/AquesTalk.dll",
+  },
+  r1: {
+    zip: new URL("../voices/r1.zip", import.meta.url),
+    dll: "r1/AquesTalk.dll",
+  },
+};
+
+const WASM_URL = new URL("../voices/v86.wasm", import.meta.url);
+
+export interface Options {
+  memorySize?: number;
+  wasmPath?: string;
+}
+
 export class AquesTalk {
   readonly #dll_file;
   readonly #emu;
@@ -52,11 +96,7 @@ export class AquesTalk {
   }
 
   #reset_esp() {
-    reg_write_uint32(
-      this.#emu,
-      REG_ESP,
-      this.HEAP_ADDRESS + this.HEAP_LENGTH
-    );
+    reg_write_uint32(this.#emu, REG_ESP, this.HEAP_ADDRESS + this.HEAP_LENGTH);
   }
 
   #init() {
@@ -103,7 +143,10 @@ export class AquesTalk {
           emu,
           info.target,
           hookMap[name],
-          name === "malloc" ? (emu: V86Emu, value: Uint8Array) => this.#heap.set_mem_value(emu, value) : undefined
+          name === "malloc"
+            ? (emu: V86Emu, value: Uint8Array) =>
+                this.#heap.set_mem_value(emu, value)
+            : undefined
         );
       }
     }
@@ -134,7 +177,10 @@ export class AquesTalk {
     const strncmpInfo = this.#iatHooks["strncmp"];
     if (strncmpInfo) {
       const strncmp_fn = this.#heap.set_mem_value(emu, strncmp);
-      emu.mem_write(this.#baseAddress + strncmpInfo.rva, to_bytes_uint32(strncmp_fn));
+      emu.mem_write(
+        this.#baseAddress + strncmpInfo.rva,
+        to_bytes_uint32(strncmp_fn)
+      );
     }
 
     const size = this.#heap.set_mem_value(emu, new Uint8Array(8).fill(0));
@@ -158,10 +204,7 @@ export class AquesTalk {
       emu.emu_start(emu.get_eip(), return_fn_addr);
     } catch (e) {
       console.error(e);
-      console.error(
-        `error at: EIP: `,
-        emu.get_eip().toString(16)
-      );
+      console.error(`error at: EIP: `, emu.get_eip().toString(16));
       console.error(
         `error at: ESP:`,
         reg_read_uint32(emu, REG_ESP).toString(16)
@@ -191,10 +234,34 @@ export class AquesTalk {
   }
 }
 
+/**
+ * Load AquesTalk by voice name (e.g., "f1").
+ * Automatic asset resolution using static new URL().
+ */
+export async function load(
+  voice: Voice,
+  options: Options & { baseUrl?: string } = {}
+) {
+  const { zip, dll } = VOICE_MAP[voice];
+  const zipPath = options.baseUrl
+    ? new URL(VOICE_MAP[voice].zip.pathname.split("/").pop()!, options.baseUrl)
+        .href
+    : zip.href;
+
+  // Default wasmPath resolution
+  if (!options.wasmPath) {
+    options.wasmPath = options.baseUrl
+      ? new URL("v86.wasm", options.baseUrl).href
+      : WASM_URL.href;
+  }
+
+  return loadAquesTalk(zipPath, dll, options);
+}
+
 export async function loadAquesTalk(
   zippath: string,
   dllpath: string,
-  options: { memorySize?: number; wasmPath?: string } = {}
+  options: Options = {}
 ) {
   const zip = new JSZip();
   const zipbin = await (await fetch(zippath)).arrayBuffer();
@@ -203,11 +270,6 @@ export async function loadAquesTalk(
 
   // Initialize v86 emulator
   const emu = new V86Emu();
-
-  // In browser environments, default wasmPath to ./v86.wasm if not provided
-  if (!options.wasmPath && typeof window !== "undefined") {
-    options.wasmPath = "./v86.wasm";
-  }
 
   await emu.init(options);
 
