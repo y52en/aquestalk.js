@@ -39,7 +39,6 @@ export class V86Emu {
   private hooks: Map<number, HookEntry> = new Map();
   private portToHook: Map<number, HookEntry> = new Map();
   private _stopped = false;
-  private _initialized = false;
 
   constructor() {}
 
@@ -99,8 +98,6 @@ export class V86Emu {
     // This is needed because multiboot mode's segments don't have GDT entries,
     // and operations like POP SS trigger #GP without valid descriptors.
     this._setupGDT();
-
-    this._initialized = true;
   }
 
   /**
@@ -247,7 +244,7 @@ export class V86Emu {
     this.portToHook.set(port, entry);
 
     // Register the I/O port handler
-    this.cpu.io.register_write(port, this, (value: number) => {
+    this.cpu.io.register_write(port, this, (_value: number) => {
       entry.callback(this, entry.userData);
     });
   }

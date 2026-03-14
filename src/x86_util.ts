@@ -1,4 +1,4 @@
-import { V86Emu, REG_ESP, REG_EAX } from "./v86_emu";
+import { V86Emu, REG_ESP } from "./v86_emu";
 import { reg_read_uint32, reg_write_uint32 } from "./emu_util";
 import { from_bytes_uint32, to_bytes_uint32 } from "./util";
 

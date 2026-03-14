@@ -22,7 +22,6 @@ import {
 import {
   Heap,
   NOP_CODE,
-  align_to_0x1000,
   hook_lib_call,
   reg_read_uint32,
   reg_write_uint32,

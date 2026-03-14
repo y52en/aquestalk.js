@@ -12,7 +12,8 @@
   "dependencies": {
     "ax-x86": "^0.6.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "v86": "^0.5.319"
   },
   "devDependencies": {
     "@types/react": "^18.2.56",

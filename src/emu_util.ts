@@ -1,5 +1,5 @@
 import { V86Emu } from "./v86_emu";
-import { from_bytes_uint32, to_bytes_uint32 } from "./util";
+
 
 export class Heap {
   readonly heap_addr: number;
