@@ -9,7 +9,7 @@ const JSZip = require('jszip');
 async function main() {
   // Load modules dynamically since they're ESM
   const { V86Emu, REG_EAX, REG_ESP } = require('../src/v86_emu');
-  const { Heap, hook_lib_call, reg_read_uint32, reg_write_uint32 } = require('../src/unicorn_util');
+  const { Heap, hook_lib_call, reg_read_uint32, reg_write_uint32 } = require('../src/emu_util');
   const { push, call, ret, get_arg, jmp } = require('../src/x86_util');
   const { to_bytes_uint32, from_bytes_uint32, convert_sjis, uint8array_concat } = require('../src/util');
 
@@ -40,7 +40,7 @@ async function main() {
   // Install hooks with debug logging
   let hookCount = 0;
   
-  hook_lib_call(emu, 0x0001765c, (emu2, userData) => {
+  hook_lib_call(emu, 0x0001765c, (emu2: any, userData: any) => {
     hookCount++;
     const arg0 = get_arg(emu2, 0);
     console.log(`[HOOK#${hookCount}] malloc called, size=${arg0}, ESP=0x${reg_read_uint32(emu2, REG_ESP).toString(16)}, EIP=0x${emu2.get_eip().toString(16)}`);
@@ -56,14 +56,14 @@ async function main() {
     console.log(`  → after ret: EIP=0x${emu2.get_eip().toString(16)}, ESP=0x${reg_read_uint32(emu2, REG_ESP).toString(16)}`);
   });
   
-  hook_lib_call(emu, 0x00017654, (emu2, userData) => {
+  hook_lib_call(emu, 0x00017654, (emu2: any, userData: any) => {
     hookCount++;
     console.log(`[HOOK#${hookCount}] free called, ESP=0x${reg_read_uint32(emu2, REG_ESP).toString(16)}, EIP=0x${emu2.get_eip().toString(16)}`);
     ret(emu2);
     console.log(`  → after ret: EIP=0x${emu2.get_eip().toString(16)}`);
   });
   
-  hook_lib_call(emu, 0x00017666, (emu2, userData) => {
+  hook_lib_call(emu, 0x00017666, (emu2: any, userData: any) => {
     hookCount++;
     console.log(`[HOOK#${hookCount}] strncmp called, ESP=0x${reg_read_uint32(emu2, REG_ESP).toString(16)}`);
     const str0 = get_arg(emu2, 0);
@@ -81,7 +81,7 @@ async function main() {
     console.log(`  → after ret: EIP=0x${emu2.get_eip().toString(16)}`);
   });
   
-  hook_lib_call(emu, 0x00017670, (emu2, userData) => {
+  hook_lib_call(emu, 0x00017670, (emu2: any, userData: any) => {
     hookCount++;
     console.log(`[HOOK#${hookCount}] strncpy called, ESP=0x${reg_read_uint32(emu2, REG_ESP).toString(16)}`);
     const dest = get_arg(emu2, 0);
@@ -109,8 +109,8 @@ async function main() {
   push(emu, 100); // speed
   push(emu, koe_addr);
 
-  const NOP_CODE = 0x90;
-  const return_fn_addr = heap.set_mem_value(emu, new Uint8Array(4).fill(NOP_CODE));
+  const NOP_CODE_VAL = 0x90;
+  const return_fn_addr = heap.set_mem_value(emu, new Uint8Array(4).fill(NOP_CODE_VAL));
   emu.set_eip(return_fn_addr);
   call(emu, BASE_ADDRESS + 0x15f0); // AquesTalk_Synthe
 
@@ -120,9 +120,10 @@ async function main() {
     emu.emu_start(emu.get_eip(), return_fn_addr);
     console.log("Emulation completed successfully!");
     console.log(`EAX: 0x${reg_read_uint32(emu, REG_EAX).toString(16)}`);
-  } catch (e) {
+  } catch (e: any) {
     console.error(`Emulation failed at EIP: 0x${emu.get_eip().toString(16)}`);
     console.error(e.message || e);
   }
+
 }
 main().catch(console.error);

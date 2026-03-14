@@ -112,8 +112,8 @@ export class V86Emu {
 
     // GDT entries: each is 8 bytes
     // Entry 0: Null descriptor (required)
-    // Entry 1 (selector 0x08): Code segment - base=0, limit=4GB, DPL=0, Execute/Read
-    // Entry 2 (selector 0x10): Data segment - base=0, limit=4GB, DPL=0, Read/Write
+    // Entry 1 (selector 0x08): Code segment - base=0, limit=4GB, DPL=3, Execute/Read
+    // Entry 2 (selector 0x10): Data segment - base=0, limit=4GB, DPL=3, Read/Write
     const gdt = new Uint8Array(8 * 3);
     const gdtView = new DataView(gdt.buffer);
 
@@ -123,19 +123,19 @@ export class V86Emu {
     // Limit[15:0] = 0xFFFF, Base[15:0] = 0x0000
     gdtView.setUint16(8, 0xffff, true);   // limit low
     gdtView.setUint16(10, 0x0000, true);  // base low
-    // Base[23:16] = 0x00, Access byte: Present=1, DPL=00, S=1, Type=1010 (exec/read) = 0x9A
+    // Base[23:16] = 0x00, Access byte: Present=1, DPL=11 (3), S=1, Type=1010 (exec/read) = 0xFA
     gdtView.setUint8(12, 0x00);            // base mid
-    gdtView.setUint8(13, 0x9a);            // access: P=1, DPL=0, S=1, E=1, DC=0, RW=1, A=0
+    gdtView.setUint8(13, 0xfa);            // access: P=1, DPL=3, S=1, E=1, DC=0, RW=1, A=0
     // Flags: Granularity=1, Size=1 (32-bit), Limit[19:16] = 0xF → 0xCF
     gdtView.setUint8(14, 0xcf);            // flags + limit high
     gdtView.setUint8(15, 0x00);            // base high
 
     // Entry 2: Data segment (selector 0x10)
-    // Same as code but Type=0010 (read/write)
+    // Same as code but Type=0010 (read/write) → Access byte 0xF2
     gdtView.setUint16(16, 0xffff, true);   // limit low
     gdtView.setUint16(18, 0x0000, true);   // base low
     gdtView.setUint8(20, 0x00);            // base mid
-    gdtView.setUint8(21, 0x92);            // access: P=1, DPL=0, S=1, E=0, DC=0, RW=1, A=0
+    gdtView.setUint8(21, 0xf2);            // access: P=1, DPL=3, S=1, E=0, DC=0, RW=1, A=0
     gdtView.setUint8(22, 0xcf);            // flags + limit high
     gdtView.setUint8(23, 0x00);            // base high
 

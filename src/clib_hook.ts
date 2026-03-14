@@ -1,5 +1,5 @@
 import { V86Emu, REG_EAX } from "./v86_emu";
-import { reg_write_uint32 } from "./unicorn_util";
+import { reg_write_uint32 } from "./emu_util";
 import { get_arg, ret } from "./x86_util";
 
 export function malloc_hook(emu: V86Emu, ...args: unknown[]) {
