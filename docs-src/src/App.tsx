@@ -14,11 +14,11 @@ const VOICES: { id: Voice; label: string }[] = [
   { id: "f1", label: "女声1 (f1)" },
   { id: "f2", label: "女声2 (f2)" },
   { id: "imd1", label: "中性 (imd1)" },
-  { id: "jgr", label: "機械音 (jgr)" },
   { id: "m1", label: "男声1 (m1)" },
   { id: "m2", label: "男声2 (m2)" },
+  { id: "jgr", label: "機械1 (jgr)" },
+  { id: "dvd", label: "機械2 (dvd)" },
   { id: "r1", label: "ロボット (r1)" },
-  { id: "dvd", label: "ディスカウント (dvd)" },
 ];
 
 function App() {
