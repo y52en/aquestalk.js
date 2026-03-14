@@ -1,52 +1,35 @@
 # AquesTalk.js
 
-途中でやる気をなくしてしまったプロジェクト\
+AquesTalkをWebAssembly(v86)環境で動かし、ブラウザから簡単に利用できるようにしたライブラリです。
+
 DEMO : [https://y52en.github.io/aquestalk.js](https://y52en.github.io/aquestalk.js)
 
-TODO
-  - [ ] 使い方を書く
-  - [ ] f1以外の声を使えるようにする
-    - [ ] そのためにpeをparseして諸々する
-  - [ ] リファクタリング！！！！！
-  - [ ] エラー表示をする(今はエラーが出ても何も表示されない)
+## 特徴
+- ブラウザ上でAquesTalk(Win32版)をエミュレートして音声合成
+- 複数の音声(f1, f2等)に対応
+- npm/TypeScript対応
 
+## ライセンス
 
-やる気をなくした最大の原因は、音声の生成が非常に遅いこと\
-例えば、`こんにちわ、せかい`をしゃべらせるだけで自分の環境で0.25秒かかる(スマホはもっとかかる)\
-ここから漢字や英語をひらがなに変換する処理などを加えると、さらに遅くなるのは目に見えている\
-x86エミュレータで手軽に使えるwasmライブラリがあればもう少し早くなるのかもしれない
+### aquesTalk.js (このリポジトリのコード)
+[MIT License](file:///home/y52en/code/aquestalk.js/LICENSE)
 
-パフォーマンス改善のためにやったこと
-  - [x] strncmpが非常に頻繁に呼ばれていて、hookで処理をしていたが、hookの処理は重くボトルネックになっていたので、strncmpのアセンブリを埋めこみエミュレータ内で処理させた(かなり効果があった)
-  - [x] Unicorn.jsのビルドオプションを-O3にした(気持ち0.01秒ぐらいしか早くなっていない、なんなら変わってないかもしれない)
+### AquesTalk (エンジンの著作権)
+AquesTalkの著作権は株式会社アクエストに帰属します。
+利用にあたっては[アクエスト社のライセンス規定](https://www.a-quest.com/licence.html)に従ってください。
+詳細なライセンス情報は、配布時のzip内に含まれる `AqLicence.txt` を参照してください。
 
-今後考えられること
-  - [ ] 一文づつ分割してWeb Workersで並列化する
-  - [ ] wasm製のx86エミュレータを使う
-    - [ ] Unicorn.jsをwasm化しようとしたが、自分の力では無理だった
+## よくある質問
 
+- **なぜzipファイルでAquesTalkを読み込んでいるの？**
+  `AqLicence.txt` によれば、DLLファイル単体での再配布は禁止されています。これを遵守しつつ利便性を確保するため、ライセンス文書を含むzipファイル形式で扱う構成をとっています。
 
-------------
-ここから完成したとき用のreadme
+---
 
-AquesTalkをunicornで雑に諸々エミュレートしてブラウザーで使えるようにしたものです。
+## 開発状況 (TODO)
+- [ ] 詳しい使い方のドキュメント作成
+- [ ] リファクタリング
+- [ ] エラーハンドリングの強化
 
-⚠注意: aquesTalkの著作権は株式会社アクエストに帰属します。詳しいライセンスはAqLicence.txtを参照してください。(zip内に含まれています)
-
-## 使い方
-
-まだ
-
-## build
-npm linkがいります\
-Unicorn.jsは自前でビルドする必要があります(cdnやreleaseのものは古く、バグがあるため持ってきてもそのままでは動きません)\
-あとは特筆することはないはず
-
-## 諸々
-
-- ライセンスは？
-  - aquesTalk.jsのaquesTalk部分はAquesTalkのライセンスに従います。
-  - このリポジトリのコードはGPLライセンスです。(unicorn.jsがGPLのため)
-- なぜzipファイルでaquesTalkを読み込んでいるの？
-  - AqLicence.txtによれば、dllファイル単体での再配布は禁止されているようです。それを回避するためにzipファイルで配布しています。
-- 参考: https://www.a-quest.com/archive/manual/prog_guide_linux.pdf
+## 参考
+- [AquesTalk 開発者ガイド (Linux版)](https://www.a-quest.com/archive/manual/prog_guide_linux.pdf)
