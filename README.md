@@ -8,7 +8,7 @@ DEMO : [https://y52en.github.io/aquestalk.js](https://y52en.github.io/aquestalk.
 
 ## 特徴
 - ブラウザ上でAquesTalk(Win32版)をエミュレートして音声合成
-- 複数の音声(f1, f2, m1, m2, dvd, imd1, jgr, r1)を標準同梱
+- 複数の音声(f1, f2, m1, m2, dvd, imd1, jgr, r1)に対応
 - TypeScript対応
 
 ## インストール
