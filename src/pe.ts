@@ -1,5 +1,3 @@
-import { from_bytes_uint32 } from "./util";
-
 export interface PEResult {
   baseAddress: number;
   aquesTalkSyntheRVA: number;

@@ -182,6 +182,13 @@ export class AquesTalk {
     this.#reset();
     return result;
   }
+
+  /**
+   * Destroy the underlying emulator and release resources.
+   */
+  async destroy(): Promise<void> {
+    await this.#emu.destroy();
+  }
 }
 
 export async function loadAquesTalk(

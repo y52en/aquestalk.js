@@ -28,11 +28,12 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    let engine: AquesTalk | null = null;
     (async () => {
       setIsLoading(true);
       setTalkEngine(null);
       try {
-        const engine = await loadAquesTalk(selectedVoice.zip, selectedVoice.dll, {
+        engine = await loadAquesTalk(selectedVoice.zip, selectedVoice.dll, {
           memorySize: 1024 * 1024 * 1024, // 1GB
         });
         setTalkEngine(engine);
@@ -43,6 +44,12 @@ function App() {
         setIsLoading(false);
       }
     })();
+
+    return () => {
+      if (engine) {
+        engine.destroy();
+      }
+    };
   }, [selectedVoice]);
 
   return (
