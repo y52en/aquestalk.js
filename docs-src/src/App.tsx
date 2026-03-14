@@ -54,7 +54,7 @@ function App() {
 
   return (
     <>
-      <h1>AquesTalk.js Multi-Voice Demo</h1>
+      <h1>AquesTalk.js Demo</h1>
       <div className="card">
         <div style={{ marginBottom: "1rem" }}>
           <label htmlFor="voice-select" style={{ marginRight: "0.5rem" }}>
@@ -103,6 +103,10 @@ function App() {
         >
           {isLoading ? "Loading..." : "PLAY!"}
         </button>
+        <div style={{ marginTop: "2rem", fontSize: "0.8rem", color: "#666" }}>
+          <p>AquesTalkを使用しています</p>
+          <p>AquesTalkの著作権は株式会社アクエストに帰属します。</p>
+        </div>
       </div>
     </>
   );
