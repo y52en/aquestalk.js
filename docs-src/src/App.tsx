@@ -3,7 +3,7 @@ import "./App.css";
 import { AquesTalk, load, Voice } from "aquestalk.js";
 
 async function play_wav(wav: Uint8Array) {
-  const blob = new Blob([wav], { type: "audio/wav" });
+  const blob = new Blob([wav as any], { type: "audio/wav" });
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
   await audio.play();
