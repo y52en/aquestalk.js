@@ -4,7 +4,7 @@
 
 AquesTalkをWebAssembly(v86)環境で動かし、ブラウザやNode.jsで簡単に利用できるようにしたライブラリです。
 
-DEMO : [https://y52en.github.io/aquestalk.js](https://y52en.github.io/aquestalk.js)
+DEMO : [https://aquestalk-js.y52.dev](https://aquestalk-js.y52.dev)
 
 ## 特徴
 - ブラウザ上でAquesTalk(Win32版)をエミュレートして音声合成
