@@ -96,6 +96,11 @@ export class AquesTalk {
   run(koe: string, speed: number = 100) {
     const emu = this.#emu;
 
+    // Reload DLL memory to BASE_ADDRESS to reset any global state
+    emu.mem_write(this.BASE_ADDRESS, new Uint8Array(this.#dll_file));
+    // Reset _adjust_fdiv and other low-memory state
+    emu.mem_write(0x000176a6, to_bytes_uint32(0));
+
     const strncmp_addr_place = 0x1000700c;
     const strncmp_fn = this.#heap.set_mem_value(emu, strncmp);
     emu.mem_write(strncmp_addr_place, to_bytes_uint32(strncmp_fn));
