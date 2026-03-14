@@ -255,7 +255,41 @@ export async function load(
       : WASM_URL.href;
   }
 
+  // Convert to local path if Node.js to avoid fetch/URL issues in v86
+  if (
+    typeof process !== "undefined" &&
+    process.versions &&
+    process.versions.node &&
+    options.wasmPath.startsWith("file://")
+  ) {
+    const { fileURLToPath } = await import("url");
+    options.wasmPath = fileURLToPath(options.wasmPath);
+  }
+
   return loadAquesTalk(zipPath, dll, options);
+}
+
+async function getData(url: string | URL): Promise<ArrayBuffer> {
+  const urlStr = url.toString();
+  if (
+    typeof process !== "undefined" &&
+    process.versions &&
+    process.versions.node &&
+    (urlStr.startsWith("file://") || !urlStr.includes("://"))
+  ) {
+    const fs = await import("fs/promises");
+    const { fileURLToPath } = await import("url");
+    const filePath = urlStr.startsWith("file://")
+      ? fileURLToPath(urlStr)
+      : urlStr;
+    const buffer = await fs.readFile(filePath);
+    return buffer.buffer.slice(
+      buffer.byteOffset,
+      buffer.byteOffset + buffer.byteLength
+    );
+  }
+  const response = await fetch(urlStr);
+  return response.arrayBuffer();
 }
 
 export async function loadAquesTalk(
@@ -264,7 +298,7 @@ export async function loadAquesTalk(
   options: Options = {}
 ) {
   const zip = new JSZip();
-  const zipbin = await (await fetch(zippath)).arrayBuffer();
+  const zipbin = await getData(zippath);
   const ziproot = await zip.loadAsync(zipbin);
   const dllfile = await ziproot.files[dllpath].async("arraybuffer");
 
