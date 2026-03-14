@@ -2,8 +2,12 @@ import { describe, it, expect, beforeAll } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import JSZip from "jszip";
-import { V86Emu } from "../src/v86_emu";
-import { AquesTalk } from "../src/index";
+import { V86Emu } from "../src/v86_emu.js";
+import { AquesTalk } from "../src/index.js";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 describe("AquesTalk Integration", () => {
   let dllFile: ArrayBuffer;
@@ -12,7 +16,7 @@ describe("AquesTalk Integration", () => {
 
   beforeAll(async () => {
     // Load zip file
-    const zipPath = path.join(__dirname, "..", "docs", "f1.zip");
+    const zipPath = path.join(__dirname, "..", "voices", "f1.zip");
     const zipBuf = fs.readFileSync(zipPath);
     const zip = new JSZip();
     const zipRoot = await zip.loadAsync(zipBuf);
@@ -20,7 +24,7 @@ describe("AquesTalk Integration", () => {
 
     // Initialize v86 emulator
     emu = new V86Emu();
-    const wasmPath = path.join(__dirname, "..", "node_modules", "v86", "build", "v86.wasm");
+    const wasmPath = path.join(__dirname, "..", "voices", "v86.wasm");
     await emu.init({ wasmPath, memorySize: 1024 * 1024 * 1024 });
 
     // Create AquesTalk instance once

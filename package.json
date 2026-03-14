@@ -1,6 +1,7 @@
 {
   "name": "aquestalk.js",
-  "version": "1.0.2",
+  "version": "1.0.3",
+  "type": "module",
   "description": "AquesTalk on WebAssembly(v86)",
   "main": "./dist/index.js",
   "module": "./dist/index.js",

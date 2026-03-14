@@ -1,6 +1,6 @@
-import { V86Emu, REG_ESP } from "./v86_emu";
-import { reg_read_uint32, reg_write_uint32 } from "./emu_util";
-import { from_bytes_uint32, to_bytes_uint32 } from "./util";
+import { V86Emu, REG_ESP } from "./v86_emu.js";
+import { reg_read_uint32, reg_write_uint32 } from "./emu_util.js";
+import { from_bytes_uint32, to_bytes_uint32 } from "./util.js";
 
 export function push(emu: V86Emu, value: number) {
   reg_write_uint32(emu, REG_ESP, reg_read_uint32(emu, REG_ESP) - 4);

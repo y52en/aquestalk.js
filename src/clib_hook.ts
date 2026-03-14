@@ -1,6 +1,6 @@
-import { V86Emu, REG_EAX } from "./v86_emu";
-import { reg_write_uint32 } from "./emu_util";
-import { get_arg, ret } from "./x86_util";
+import { V86Emu, REG_EAX } from "./v86_emu.js";
+import { reg_write_uint32 } from "./emu_util.js";
+import { get_arg, ret } from "./x86_util.js";
 
 export function malloc_hook(emu: V86Emu, ...args: unknown[]) {
   const arg0 = get_arg(emu, 0);
