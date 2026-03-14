@@ -15,6 +15,8 @@ export class Heap {
   }
 
   set_mem_value(emu: V86Emu, value: Uint8Array): number {
+    // Aligh to 4 bytes
+    this.heap_used = (this.heap_used + 3) & ~3;
     const write_address = this.heap_addr + this.heap_used;
     if (write_address + value.length >= this.heap_addr + this.heap_len) {
       throw new Error("heap over");

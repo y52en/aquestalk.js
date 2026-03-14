@@ -28,10 +28,7 @@ interface HookEntry {
   port: number;
 }
 
-// We use custom I/O ports for hook callbacks
-// Range 0xE0-0xEF is typically unused
 const HOOK_PORT_BASE = 0xE0;
-let nextHookPort = HOOK_PORT_BASE;
 
 export class V86Emu {
   private emulator: any; // V86 instance
@@ -39,6 +36,7 @@ export class V86Emu {
   private hooks: Map<number, HookEntry> = new Map();
   private portToHook: Map<number, HookEntry> = new Map();
   private _stopped = false;
+  private nextHookPort = HOOK_PORT_BASE;
 
   constructor() {}
 
@@ -229,7 +227,7 @@ export class V86Emu {
     callback: HookCallback,
     userData: any = null
   ): void {
-    const port = nextHookPort++;
+    const port = this.nextHookPort++;
 
     // Save the original byte at the hook address
     const originalBytes = new Uint8Array(this.cpu.read_blob(addr, 2));
@@ -310,5 +308,15 @@ export class V86Emu {
    */
   emu_stop(): void {
     this._stopped = true;
+  }
+
+  /**
+   * Destroy the emulator and release resources.
+   */
+  async destroy(): Promise<void> {
+    if (this.emulator) {
+      await this.emulator.destroy();
+      this.emulator = null;
+    }
   }
 }
