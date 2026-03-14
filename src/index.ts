@@ -26,6 +26,7 @@ import {
   reg_read_uint32,
   reg_write_uint32,
 } from "./emu_util";
+import { parsePE } from "./pe";
 
 const _strncmp =
   "8b ff 55 8b ec 53 56 8b 75 10 33 d2 57 85 f6 0f 84 8a 00 00 00 83 fe 04 72 68 8d 7e fc 85 ff 74 61 8b 4d 0c 8b 45 08 8a 18 83 c0 04 83 c1 04 84 db 74 44 3a 59 fc 75 3f 8a 58 fd 84 db 74 32 3a 59 fd 75 2d 8a 58 fe 84 db 74 20 3a 59 fe 75 1b 8a 58 ff 84 db 74 0e 3a 59 ff 75 09 83 c2 04 3b d7 72 c4 eb 23 0f b6 49 ff eb 10 0f b6 49 fe eb 0a 0f b6 49 fd eb 04 0f b6 49 fc 0f b6 c3 2b c1 eb 1f 8b 4d 0c 8b 45 08 3b d6 73 13 2b c1 8a 1c 08 84 db 74 11 3a 19 75 0d 42 41 3b d6 72 ef 33 c0 5f 5e 5b 5d c3 0f b6 09 eb d0";
@@ -35,8 +36,11 @@ export class AquesTalk {
   readonly #dll_file;
   readonly #emu;
 
-  readonly BASE_ADDRESS = 0x1000_0000;
-  readonly AquesTalk_Synthe = this.BASE_ADDRESS + 0x15f0;
+  #baseAddress = 0x1000_0000;
+  #aquesTalk_SyntheAddress = 0;
+  #iatHooks: { [key: string]: { rva: number; target: number } } = {};
+  #adjustFdivTargetAddress = 0;
+
   readonly HEAP_ADDRESS = 0x2000_0000;
   readonly HEAP_LENGTH = 0x100_0000;
   // init内で初期化するため、nullで初期化
@@ -58,33 +62,55 @@ export class AquesTalk {
   #init() {
     const emu = this.#emu;
 
+    const pe = parsePE(this.#dll_file);
+    // DLL code expects BASE_ADDRESS typically 0x10000000.
+    // We use a hardcoded BASE_ADDRESS for simplicity as the original code did.
+    // However, we update it if the PE prefers something else, or just stick to 0x10000000.
+    // In f1/f2 it is 0x10000000.
+    this.#baseAddress = pe.baseAddress;
+    this.#aquesTalk_SyntheAddress = this.#baseAddress + pe.aquesTalkSyntheRVA;
+    this.#iatHooks = pe.iatHooks;
+    this.#adjustFdivTargetAddress = pe.adjustFdivTarget; // IAT target RVAs are used as ABSOLUTE addresses by unlinked DLLs
+
     // v86 has flat memory - no need for mem_map, just write directly
-    // Write the DLL into memory at BASE_ADDRESS
-    emu.mem_write(this.BASE_ADDRESS, new Uint8Array(this.#dll_file));
+    // Write the DLL into memory at baseAddress
+    emu.mem_write(this.#baseAddress, new Uint8Array(this.#dll_file));
 
     // Initialize heap
     this.#heap = new Heap(emu, this.HEAP_ADDRESS, this.HEAP_LENGTH);
     this.#reset_esp();
 
-    hook_lib_call(emu, 0x0001765c, malloc_hook, (emu: V86Emu, value: Uint8Array) =>
-      this.#heap.set_mem_value(emu, value)
-    );
-    hook_lib_call(emu, 0x00017666, strncmp_hook);
-    hook_lib_call(emu, 0x00017670, strncpy_hook);
-    hook_lib_call(emu, 0x00017654, free_hook);
-    hook_lib_call(emu, 0x0001767a, strtok_hook);
-    hook_lib_call(emu, 0x0001769a, initterm_hook);
-    hook_lib_call(emu, 0x00017684, strchr_hook);
-    hook_lib_call(emu, 0x00017640, cxx_frame_handler_hook);
-    hook_lib_call(emu, 0x000176e0, stricmp_hook);
-    hook_lib_call(emu, 0x000176b6, disable_thread_library_calls_hook);
+    const hookMap: { [key: string]: (emu: V86Emu, ...args: any[]) => void } = {
+      malloc: malloc_hook,
+      free: free_hook,
+      strncmp: strncmp_hook,
+      strncpy: strncpy_hook,
+      strtok: strtok_hook,
+      strchr: strchr_hook,
+      stricmp: stricmp_hook,
+      _stricmp: stricmp_hook,
+      _initterm: initterm_hook,
+      initterm: initterm_hook,
+      __CxxFrameHandler: cxx_frame_handler_hook,
+      DisableThreadLibraryCalls: disable_thread_library_calls_hook,
+    };
 
-    // _adjust_fdiv is a DATA import (int variable), not a function.
-    // The DLL does: mov eax,[IAT_entry] → reads value at that address.
-    // We write 0 (no Pentium FDIV bug) at the IAT target address.
-    // IAT entry at BASE+0x7020 points to RVA 0x176a6.
-    // We need to write 0 at address 0x176a6.
-    emu.mem_write(0x000176a6, to_bytes_uint32(0));
+    for (const [name, info] of Object.entries(this.#iatHooks)) {
+      if (hookMap[name]) {
+        // We hook at the info.target address which is the unlinked address value from IAT.
+        // The DLL code jumps to this address when calling imports.
+        hook_lib_call(
+          emu,
+          info.target,
+          hookMap[name],
+          name === "malloc" ? (emu: V86Emu, value: Uint8Array) => this.#heap.set_mem_value(emu, value) : undefined
+        );
+      }
+    }
+
+    if (this.#adjustFdivTargetAddress) {
+      emu.mem_write(this.#adjustFdivTargetAddress, to_bytes_uint32(0));
+    }
   }
 
   #reset() {
@@ -97,13 +123,19 @@ export class AquesTalk {
     const emu = this.#emu;
 
     // Reload DLL memory to BASE_ADDRESS to reset any global state
-    emu.mem_write(this.BASE_ADDRESS, new Uint8Array(this.#dll_file));
+    emu.mem_write(this.#baseAddress, new Uint8Array(this.#dll_file));
     // Reset _adjust_fdiv and other low-memory state
-    emu.mem_write(0x000176a6, to_bytes_uint32(0));
+    if (this.#adjustFdivTargetAddress) {
+      emu.mem_write(this.#adjustFdivTargetAddress, to_bytes_uint32(0));
+    }
 
-    const strncmp_addr_place = 0x1000700c;
-    const strncmp_fn = this.#heap.set_mem_value(emu, strncmp);
-    emu.mem_write(strncmp_addr_place, to_bytes_uint32(strncmp_fn));
+    // AquesTalk sometimes uses strncmp to check something.
+    // Optimization: overwrite IAT entry with native code snippet address.
+    const strncmpInfo = this.#iatHooks["strncmp"];
+    if (strncmpInfo) {
+      const strncmp_fn = this.#heap.set_mem_value(emu, strncmp);
+      emu.mem_write(this.#baseAddress + strncmpInfo.rva, to_bytes_uint32(strncmp_fn));
+    }
 
     const size = this.#heap.set_mem_value(emu, new Uint8Array(8).fill(0));
     const koe_addr = this.#heap.set_mem_value(
@@ -120,7 +152,7 @@ export class AquesTalk {
       new Uint8Array(1048576).fill(NOP_CODE[0])
     );
     emu.set_eip(return_fn_addr);
-    call(emu, this.AquesTalk_Synthe);
+    call(emu, this.#aquesTalk_SyntheAddress);
 
     try {
       emu.emu_start(emu.get_eip(), return_fn_addr);
