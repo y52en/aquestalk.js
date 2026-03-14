@@ -1,37 +1,36 @@
+import { V86Emu, REG_ESP, REG_EAX } from "./v86_emu";
 import { reg_read_uint32, reg_write_uint32 } from "./unicorn_util";
 import { from_bytes_uint32, to_bytes_uint32 } from "./util";
 
-const uc = window.uc;
-
-export function push(mu: Uc, value: number) {
-  reg_write_uint32(mu, uc.X86_REG_ESP, reg_read_uint32(mu, uc.X86_REG_ESP) - 4);
-  mu.mem_write(reg_read_uint32(mu, uc.X86_REG_ESP), to_bytes_uint32(value));
+export function push(emu: V86Emu, value: number) {
+  reg_write_uint32(emu, REG_ESP, reg_read_uint32(emu, REG_ESP) - 4);
+  emu.mem_write(reg_read_uint32(emu, REG_ESP), to_bytes_uint32(value));
 }
 
-export function pop(mu: Uc): number {
+export function pop(emu: V86Emu): number {
   const value = from_bytes_uint32(
-    mu.mem_read(reg_read_uint32(mu, uc.X86_REG_ESP), 4)
+    emu.mem_read(reg_read_uint32(emu, REG_ESP), 4)
   );
-  reg_write_uint32(mu, uc.X86_REG_ESP, reg_read_uint32(mu, uc.X86_REG_ESP) + 4);
+  reg_write_uint32(emu, REG_ESP, reg_read_uint32(emu, REG_ESP) + 4);
   return value;
 }
 
-export function jmp(mu: Uc, address: number) {
-  reg_write_uint32(mu, uc.X86_REG_EIP, address);
+export function jmp(emu: V86Emu, address: number) {
+  emu.set_eip(address);
 }
 
-export function call(mu: Uc, address: number) {
-  push(mu, reg_read_uint32(mu, uc.X86_REG_EIP));
-  jmp(mu, address);
+export function call(emu: V86Emu, address: number) {
+  push(emu, emu.get_eip());
+  jmp(emu, address);
 }
 
-export function ret(mu: Uc) {
-  const ret_address = pop(mu);
-  jmp(mu, ret_address);
+export function ret(emu: V86Emu) {
+  const ret_address = pop(emu);
+  jmp(emu, ret_address);
 }
 
-export function get_arg(mu: Uc, num: number): number {
+export function get_arg(emu: V86Emu, num: number): number {
   return from_bytes_uint32(
-    mu.mem_read(reg_read_uint32(mu, uc.X86_REG_ESP) + 4 * (1 + num), 4)
+    emu.mem_read(reg_read_uint32(emu, REG_ESP) + 4 * (1 + num), 4)
   );
 }

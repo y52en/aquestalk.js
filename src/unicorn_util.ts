@@ -1,65 +1,54 @@
+import { V86Emu } from "./v86_emu";
 import { from_bytes_uint32, to_bytes_uint32 } from "./util";
-
-const uc = window.uc;
 
 export class Heap {
   readonly heap_addr: number;
   readonly heap_len: number;
   heap_used = 0;
 
-  constructor(mu: Uc, heap_addr: number, heap_len = 0) {
+  constructor(emu: V86Emu, heap_addr: number, heap_len = 0) {
     this.heap_addr = heap_addr;
     this.heap_len = heap_len;
-    this.#create_heap(mu);
+    // v86 has flat physical memory, no need to explicitly map
+    // Just zero-fill the heap region
+    emu.mem_write(heap_addr, new Uint8Array(heap_len));
   }
 
-  set_mem_value(mu: Uc, value: Uint8Array): number {
+  set_mem_value(emu: V86Emu, value: Uint8Array): number {
     const write_address = this.heap_addr + this.heap_used;
     if (write_address + value.length >= this.heap_addr + this.heap_len) {
       throw new Error("heap over");
     }
-    mu.mem_write(write_address, value);
+    emu.mem_write(write_address, value);
     this.heap_used += value.length;
     return write_address;
   }
 
-  #create_heap(mu: Uc) {
-    mu.mem_map(this.heap_addr, this.heap_len, uc.PROT_ALL);
-  }
-
-  clear_heap(mu: Uc) {
-    mu.mem_unmap(this.heap_addr, this.heap_len);
+  clear_heap(emu: V86Emu) {
+    emu.mem_write(this.heap_addr, new Uint8Array(this.heap_len));
     this.heap_used = 0;
-    this.#create_heap(mu);
   }
 }
 
 export const NOP_CODE = new Uint8Array([0x90]);
 
 export function hook_lib_call(
-  mu: Uc,
+  emu: V86Emu,
   address: number,
-  callback: (mu: Uc, ...args: any[]) => void,
+  callback: (emu: V86Emu, ...args: any[]) => void,
   arg: any = null
 ) {
-  mu.mem_write(address, NOP_CODE);
-  mu.hook_add(
-    uc.HOOK_CODE,
-    (...arg) => {
-      callback(...arg);
-    },
-    arg,
-    address,
-    address + 4
-  );
+  emu.set_hook(address, (emu: V86Emu, userData: any) => {
+    callback(emu, userData);
+  }, arg);
 }
 
-export function reg_read_uint32(mu: Uc, reg: number): number {
-  return from_bytes_uint32(mu.reg_read(reg, 4));
+export function reg_read_uint32(emu: V86Emu, reg: number): number {
+  return emu.reg_read(reg);
 }
 
-export function reg_write_uint32(mu: Uc, reg: number, value: number) {
-  mu.reg_write(reg, to_bytes_uint32(value));
+export function reg_write_uint32(emu: V86Emu, reg: number, value: number) {
+  emu.reg_write(reg, value);
 }
 
 export function align_to_0x1000(number: number): number {
