@@ -1,4 +1,4 @@
-import { V86Emu } from "./v86_emu";
+import { V86Emu } from "./v86_emu.js";
 
 
 export class Heap {
