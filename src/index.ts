@@ -113,7 +113,7 @@ export class AquesTalk {
 
     const return_fn_addr = this.#heap.set_mem_value(
       emu,
-      new Uint8Array(4096).fill(NOP_CODE[0])
+      new Uint8Array(1048576).fill(NOP_CODE[0])
     );
     emu.set_eip(return_fn_addr);
     call(emu, this.AquesTalk_Synthe);
