@@ -22,11 +22,25 @@ export function strncmp_hook(emu: V86Emu, ..._args: unknown[]) {
   const max_len = get_arg(emu, 2);
 
   let result = 0;
-  for (let i = 0; i < max_len; i++) {
-    if (emu.mem_read(str0 + i, 1)[0] !== emu.mem_read(str1 + i, 1)[0]) {
-      result = emu.mem_read(str0 + i, 1)[0] - emu.mem_read(str1 + i, 1)[0];
-      break;
+  let offset = 0;
+  outer: while (offset < max_len) {
+    const page_limit0 = 4096 - ((str0 + offset) % 4096);
+    const page_limit1 = 4096 - ((str1 + offset) % 4096);
+    let to_read = Math.min(256, max_len - offset, page_limit0, page_limit1);
+
+    const chunk0 = emu.mem_read(str0 + offset, to_read);
+    const chunk1 = emu.mem_read(str1 + offset, to_read);
+
+    const read_len = Math.min(chunk0.length, chunk1.length);
+    if (read_len === 0) break;
+
+    for (let i = 0; i < read_len; i++) {
+      if (chunk0[i] !== chunk1[i]) {
+        result = chunk0[i] - chunk1[i];
+        break outer;
+      }
     }
+    offset += read_len;
   }
 
   reg_write_uint32(emu, REG_EAX, result);
@@ -58,16 +72,24 @@ export function strchr_hook(emu: V86Emu, ..._args: unknown[]) {
   const str = get_arg(emu, 0);
   const ch = get_arg(emu, 1) & 0xff;
 
-  let i = 0;
-  while (true) {
-    const byte = emu.mem_read(str + i, 1)[0];
-    if (byte === ch) {
-      reg_write_uint32(emu, REG_EAX, str + i);
-      ret(emu);
-      return;
+  let offset = 0;
+  outer: while (true) {
+    const page_limit = 4096 - ((str + offset) % 4096);
+    const to_read = Math.min(256, page_limit);
+    const chunk = emu.mem_read(str + offset, to_read);
+
+    if (chunk.length === 0) break;
+
+    for (let i = 0; i < chunk.length; i++) {
+      const byte = chunk[i];
+      if (byte === ch) {
+        reg_write_uint32(emu, REG_EAX, str + offset + i);
+        ret(emu);
+        return;
+      }
+      if (byte === 0) break outer;
     }
-    if (byte === 0) break;
-    i++;
+    offset += chunk.length;
   }
 
   reg_write_uint32(emu, REG_EAX, 0);
@@ -79,20 +101,32 @@ export function stricmp_hook(emu: V86Emu, ..._args: unknown[]) {
   const str0 = get_arg(emu, 0);
   const str1 = get_arg(emu, 1);
 
-  let i = 0;
-  while (true) {
-    let a = emu.mem_read(str0 + i, 1)[0];
-    let b = emu.mem_read(str1 + i, 1)[0];
-    // To lowercase
-    if (a >= 0x41 && a <= 0x5a) a += 0x20;
-    if (b >= 0x41 && b <= 0x5a) b += 0x20;
-    if (a !== b) {
-      reg_write_uint32(emu, REG_EAX, a - b);
-      ret(emu);
-      return;
+  let offset = 0;
+  outer: while (true) {
+    const page_limit0 = 4096 - ((str0 + offset) % 4096);
+    const page_limit1 = 4096 - ((str1 + offset) % 4096);
+    let to_read = Math.min(256, page_limit0, page_limit1);
+
+    const chunk0 = emu.mem_read(str0 + offset, to_read);
+    const chunk1 = emu.mem_read(str1 + offset, to_read);
+
+    const read_len = Math.min(chunk0.length, chunk1.length);
+    if (read_len === 0) break;
+
+    for (let i = 0; i < read_len; i++) {
+      let a = chunk0[i];
+      let b = chunk1[i];
+      // To lowercase
+      if (a >= 0x41 && a <= 0x5a) a += 0x20;
+      if (b >= 0x41 && b <= 0x5a) b += 0x20;
+      if (a !== b) {
+        reg_write_uint32(emu, REG_EAX, a - b);
+        ret(emu);
+        return;
+      }
+      if (a === 0) break outer;
     }
-    if (a === 0) break;
-    i++;
+    offset += read_len;
   }
 
   reg_write_uint32(emu, REG_EAX, 0);
