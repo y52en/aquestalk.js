@@ -23,8 +23,10 @@ export function strncmp_hook(emu: V86Emu, ..._args: unknown[]) {
 
   let result = 0;
   for (let i = 0; i < max_len; i++) {
-    if (emu.mem_read(str0 + i, 1)[0] !== emu.mem_read(str1 + i, 1)[0]) {
-      result = emu.mem_read(str0 + i, 1)[0] - emu.mem_read(str1 + i, 1)[0];
+    const c0 = emu.mem_read(str0 + i, 1)[0];
+    const c1 = emu.mem_read(str1 + i, 1)[0];
+    if (c0 !== c1) {
+      result = c0 - c1;
       break;
     }
   }
