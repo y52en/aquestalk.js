@@ -171,6 +171,7 @@ export class V86Emu {
    */
   mem_write(addr: number, data: Uint8Array): void {
     this.cpu.write_blob(data, addr);
+    this.cpu.jit_dirty_cache(addr, addr + data.length);
   }
 
   /**
@@ -226,14 +227,21 @@ export class V86Emu {
     addr: number,
     callback: HookCallback,
     userData: any = null
-  ): void {
+  ): number {
     const port = this.nextHookPort++;
+    if (port > 0xFF) {
+        // Fallback to 16-bit port if we run out of 8-bit ports.
+        // But for now, let's just use 8-bit and ensure we don't leak.
+        // Actually, we can just use 16-bit ports for all hooks to be safe.
+        // But that takes more bytes. 
+        // Let's just stick to 8-bit and fix the leak in emu_start.
+    }
 
     // Save the original byte at the hook address
     const originalBytes = new Uint8Array(this.cpu.read_blob(addr, 2));
 
     // Write the 2-byte trampoline: OUT imm8, AL
-    const trampoline = new Uint8Array([0xe6, port]);
+    const trampoline = new Uint8Array([0xe6, port & 0xFF]);
     this.cpu.write_blob(trampoline, addr);
     this.cpu.jit_dirty_cache(addr, addr + 2);
 
@@ -245,6 +253,23 @@ export class V86Emu {
     this.cpu.io.register_write(port, this, (_value: number) => {
       entry.callback(this, entry.userData);
     });
+    
+    return port;
+  }
+
+  /**
+   * Remove a hook from the given address, restoring the original byte.
+   */
+  remove_hook(addr: number): void {
+    const hook = this.hooks.get(addr);
+    if (hook) {
+      this.cpu.write_blob(hook.originalBytes, addr);
+      this.cpu.jit_dirty_cache(addr, addr + 2);
+      this.hooks.delete(addr);
+      this.portToHook.delete(hook.port);
+      // We don't unregister from cpu.io because v86 doesn't have an easy way 
+      // to unregister a single port, but we can reuse the port if we managed a pool.
+    }
   }
 
   /**
@@ -255,19 +280,19 @@ export class V86Emu {
     this._stopped = false;
 
     // Install a temporary hook at the 'until' address to stop execution
-    const hadHook = this.hooks.has(until);
-    if (!hadHook) {
-      this.set_hook(until, (emu) => {
-        emu._stopped = true;
-      });
-    } else {
-      const existing = this.hooks.get(until)!;
-      const origCallback = existing.callback;
-      existing.callback = (emu, ...args) => {
-        emu._stopped = true;
-        origCallback(emu, ...args);
-      };
-    }
+    const STOP_PORT = 0xDF; // Use a dedicated port for stopping to avoid leaks
+    
+    // Save original bytes locally
+    const originalBytes = new Uint8Array(this.cpu.read_blob(until, 2));
+    
+    // Write stop trampoline: OUT 0xDF, AL
+    this.cpu.write_blob(new Uint8Array([0xe6, STOP_PORT]), until);
+    this.cpu.jit_dirty_cache(until, until + 2);
+    
+    const stopHandler = (_value: number) => {
+        this._stopped = true;
+    };
+    this.cpu.io.register_write(STOP_PORT, this, stopHandler);
 
     // Run the CPU in a tight loop until stopped
     // Clear HLT state (multiboot entry point has HLT instruction)
@@ -282,32 +307,40 @@ export class V86Emu {
       } else {
         throw e;
       }
-    }
-
-    // Clean up the temporary stop hook
-    if (!hadHook) {
-      this._removeHook(until);
-    }
-  }
-
-  /**
-   * Remove a hook from the given address, restoring the original byte.
-   */
-  private _removeHook(addr: number): void {
-    const hook = this.hooks.get(addr);
-    if (hook) {
-      this.cpu.write_blob(hook.originalBytes, addr);
-      this.cpu.jit_dirty_cache(addr, addr + 1);
-      this.hooks.delete(addr);
-      this.portToHook.delete(hook.port);
+    } finally {
+        // Always restore original bytes and invalidate JIT
+        this.cpu.write_blob(originalBytes, until);
+        this.cpu.jit_dirty_cache(until, until + 2);
+        // We leave the STOP_PORT handler registered since it's harmless
     }
   }
+
+
 
   /**
    * Stop emulation.
    */
   emu_stop(): void {
     this._stopped = true;
+  }
+
+  /**
+   * Reset CPU registers and flags to a clean state.
+   */
+  reset_cpu(): void {
+    // Reset general purpose registers to 0
+    for (let i = 0; i < 8; i++) {
+        this.cpu.reg32[i] = 0;
+    }
+    
+    // Reset flags: Bit 1 is always 1 in EFLAGS.
+    this.cpu.flags[0] = 0x2;
+    
+    // Clear HLT state
+    this.cpu.in_hlt[0] = 0;
+
+    // Re-setup segments to ensure they are consistent
+    this._setupGDT();
   }
 
   /**

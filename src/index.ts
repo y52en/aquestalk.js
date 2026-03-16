@@ -165,6 +165,10 @@ export class AquesTalk {
   run(koe: string, speed: number = 100) {
     const emu = this.#emu;
 
+    // Reset CPU registers and segments before starting a new run
+    emu.reset_cpu();
+    this.#reset_esp();
+
     // Reload DLL memory to BASE_ADDRESS to reset any global state
     emu.mem_write(this.#baseAddress, new Uint8Array(this.#dll_file));
     // Reset _adjust_fdiv and other low-memory state
