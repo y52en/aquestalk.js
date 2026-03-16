@@ -22,13 +22,30 @@ export function strncmp_hook(emu: V86Emu, ..._args: unknown[]) {
   const max_len = get_arg(emu, 2);
 
   let result = 0;
-  for (let i = 0; i < max_len; i++) {
-    const c0 = emu.mem_read(str0 + i, 1)[0];
-    const c1 = emu.mem_read(str1 + i, 1)[0];
-    if (c0 !== c1) {
-      result = c0 - c1;
-      break;
+  let remaining = max_len;
+  let offset = 0;
+
+  while (remaining > 0) {
+    const chunk_size = Math.min(remaining, 256);
+    const buf0 = emu.mem_read(str0 + offset, chunk_size);
+    const buf1 = emu.mem_read(str1 + offset, chunk_size);
+
+    for (let i = 0; i < chunk_size; i++) {
+      if (buf0[i] !== buf1[i]) {
+        result = buf0[i] - buf1[i];
+        reg_write_uint32(emu, REG_EAX, result);
+        ret(emu);
+        return;
+      }
+      if (buf0[i] === 0) {
+        reg_write_uint32(emu, REG_EAX, 0);
+        ret(emu);
+        return;
+      }
     }
+
+    offset += chunk_size;
+    remaining -= chunk_size;
   }
 
   reg_write_uint32(emu, REG_EAX, result);
@@ -60,20 +77,26 @@ export function strchr_hook(emu: V86Emu, ..._args: unknown[]) {
   const str = get_arg(emu, 0);
   const ch = get_arg(emu, 1) & 0xff;
 
-  let i = 0;
-  while (true) {
-    const byte = emu.mem_read(str + i, 1)[0];
-    if (byte === ch) {
-      reg_write_uint32(emu, REG_EAX, str + i);
-      ret(emu);
-      return;
-    }
-    if (byte === 0) break;
-    i++;
-  }
+  let offset = 0;
+  const CHUNK_SIZE = 256;
 
-  reg_write_uint32(emu, REG_EAX, 0);
-  ret(emu);
+  while (true) {
+    const buf = emu.mem_read(str + offset, CHUNK_SIZE);
+    for (let i = 0; i < CHUNK_SIZE; i++) {
+      const byte = buf[i];
+      if (byte === ch) {
+        reg_write_uint32(emu, REG_EAX, str + offset + i);
+        ret(emu);
+        return;
+      }
+      if (byte === 0) {
+        reg_write_uint32(emu, REG_EAX, 0);
+        ret(emu);
+        return;
+      }
+    }
+    offset += CHUNK_SIZE;
+  }
 }
 
 export function stricmp_hook(emu: V86Emu, ..._args: unknown[]) {
@@ -81,35 +104,39 @@ export function stricmp_hook(emu: V86Emu, ..._args: unknown[]) {
   const str0 = get_arg(emu, 0);
   const str1 = get_arg(emu, 1);
 
-  let i = 0;
-  while (true) {
-    let a = emu.mem_read(str0 + i, 1)[0];
-    let b = emu.mem_read(str1 + i, 1)[0];
-    // To lowercase
-    if (a >= 0x41 && a <= 0x5a) a += 0x20;
-    if (b >= 0x41 && b <= 0x5a) b += 0x20;
-    if (a !== b) {
-      reg_write_uint32(emu, REG_EAX, a - b);
-      ret(emu);
-      return;
-    }
-    if (a === 0) break;
-    i++;
-  }
+  let offset = 0;
+  const CHUNK_SIZE = 256;
 
-  reg_write_uint32(emu, REG_EAX, 0);
-  ret(emu);
+  while (true) {
+    const buf0 = emu.mem_read(str0 + offset, CHUNK_SIZE);
+    const buf1 = emu.mem_read(str1 + offset, CHUNK_SIZE);
+
+    for (let i = 0; i < CHUNK_SIZE; i++) {
+      let a = buf0[i];
+      let b = buf1[i];
+
+      // To lowercase
+      if (a >= 0x41 && a <= 0x5a) a += 0x20;
+      if (b >= 0x41 && b <= 0x5a) b += 0x20;
+
+      if (a !== b) {
+        reg_write_uint32(emu, REG_EAX, a - b);
+        ret(emu);
+        return;
+      }
+      if (a === 0) {
+        reg_write_uint32(emu, REG_EAX, 0);
+        ret(emu);
+        return;
+      }
+    }
+    offset += CHUNK_SIZE;
+  }
 }
 
 export function initterm_hook(emu: V86Emu, ..._args: unknown[]) {
   // _initterm(start, end) - calls function pointers between start and end
   // We skip this since there's nothing to initialize
-  ret(emu);
-}
-
-export function adjust_fdiv_hook(emu: V86Emu, ..._args: unknown[]) {
-  // _adjust_fdiv - checks for Pentium FDIV bug, return 0 (no bug)
-  reg_write_uint32(emu, REG_EAX, 0);
   ret(emu);
 }
 
