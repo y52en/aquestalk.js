@@ -105,12 +105,6 @@ export function initterm_hook(emu: V86Emu, ..._args: unknown[]) {
   ret(emu);
 }
 
-export function adjust_fdiv_hook(emu: V86Emu, ..._args: unknown[]) {
-  // _adjust_fdiv - checks for Pentium FDIV bug, return 0 (no bug)
-  reg_write_uint32(emu, REG_EAX, 0);
-  ret(emu);
-}
-
 export function cxx_frame_handler_hook(emu: V86Emu, ..._args: unknown[]) {
   // __CxxFrameHandler - C++ exception handler
   // We don't support exceptions, just return
