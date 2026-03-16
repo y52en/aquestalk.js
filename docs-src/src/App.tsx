@@ -24,6 +24,7 @@ const VOICES: { id: Voice; label: string }[] = [
 function App() {
   const [talkText, setTalkText] = useState("こんにちわ、せかい");
   const [selectedVoice, setSelectedVoice] = useState(VOICES[0]);
+  const [speed, setSpeed] = useState(100);
   const [talkEngine, setTalkEngine] = useState<AquesTalk | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -77,6 +78,29 @@ function App() {
           </select>
         </div>
         <div style={{ marginBottom: "1rem" }}>
+          <label htmlFor="speed-input" style={{ marginRight: "0.5rem" }}>
+            Speed:
+          </label>
+          <input
+            id="speed-input"
+            type="number"
+            min="50"
+            max="300"
+            value={speed}
+            onChange={(e) => setSpeed(parseInt(e.target.value) || 100)}
+            style={{ width: "60px", marginRight: "1rem" }}
+          />
+          <input
+            type="range"
+            min="50"
+            max="300"
+            value={speed}
+            onChange={(e) => setSpeed(parseInt(e.target.value))}
+            style={{ verticalAlign: "middle" }}
+          />
+          <span style={{ marginLeft: "0.5rem" }}>{speed}</span>
+        </div>
+        <div style={{ marginBottom: "1rem" }}>
           <textarea
             style={{ width: "100%", height: "100px", padding: "0.5rem" }}
             value={talkText}
@@ -93,7 +117,7 @@ function App() {
             }
             console.time("talkEngine.run");
             try {
-              play_wav(await talkEngine.run(talkText));
+              play_wav(await talkEngine.run(talkText, speed));
             } catch (e) {
               console.error(e);
               alert(e);
