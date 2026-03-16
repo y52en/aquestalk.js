@@ -50,4 +50,10 @@ describe("AquesTalk Integration", () => {
     expect(result2).toBeDefined();
     expect(result1.length).not.toBe(result2.length);
   }, 30000);
+
+  it("should throw an error on invalid input", () => {
+    expect(() => {
+      aq.run("invalid_string_12345!@#$%");
+    }).toThrow(/AquesTalk_Synthe error\. ERROR CODE: \d+/);
+  }, 30000);
 });
