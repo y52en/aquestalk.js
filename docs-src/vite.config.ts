@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      "aquestalk.js": path.resolve(__dirname, "../src/index.ts"),
       v86: path.resolve(__dirname, "node_modules/v86"),
     },
   },

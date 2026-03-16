@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "aquestalk.js": "^1.0.1",
+    "aquestalk.js": "file:..",
     "ax-x86": "^0.6.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
