@@ -27,8 +27,10 @@ export class Heap {
   }
 
   clear_heap(emu: V86Emu) {
-    emu.mem_write(this.heap_addr, new Uint8Array(this.heap_len));
-    this.heap_used = 0;
+    if (this.heap_used > 0) {
+      emu.mem_write(this.heap_addr, new Uint8Array(this.heap_used));
+      this.heap_used = 0;
+    }
   }
 }
 
