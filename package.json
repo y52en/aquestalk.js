@@ -18,7 +18,8 @@
     "types": "./dist/index.d.ts"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/embed_native.js && tsc",
+    "prebuild": "node scripts/embed_native.js",
     "start": "tsc -w",
     "test": "vitest run",
     "test:watch": "vitest"

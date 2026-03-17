@@ -10,14 +10,6 @@ import {
 import {
   free_hook,
   malloc_hook,
-  strncmp_hook,
-  strncpy_hook,
-  strtok_hook,
-  strchr_hook,
-  stricmp_hook,
-  initterm_hook,
-  cxx_frame_handler_hook,
-  disable_thread_library_calls_hook,
 } from "./clib_hook.js";
 import {
   Heap,
@@ -27,10 +19,7 @@ import {
   reg_write_uint32,
 } from "./emu_util.js";
 import { parsePE } from "./pe.js";
-
-const _strncmp =
-  "8b ff 55 8b ec 53 56 8b 75 10 33 d2 57 85 f6 0f 84 8a 00 00 00 83 fe 04 72 68 8d 7e fc 85 ff 74 61 8b 4d 0c 8b 45 08 8a 18 83 c0 04 83 c1 04 84 db 74 44 3a 59 fc 75 3f 8a 58 fd 84 db 74 32 3a 59 fd 75 2d 8a 58 fe 84 db 74 20 3a 59 fe 75 1b 8a 58 ff 84 db 74 0e 3a 59 ff 75 09 83 c2 04 3b d7 72 c4 eb 23 0f b6 49 ff eb 10 0f b6 49 fe eb 0a 0f b6 49 fd eb 04 0f b6 49 fc 0f b6 c3 2b c1 eb 1f 8b 4d 0c 8b 45 08 3b d6 73 13 2b c1 8a 1c 08 84 db 74 11 3a 19 75 0d 42 41 3b d6 72 ef 33 c0 5f 5e 5b 5d c3 0f b6 09 eb d0";
-const strncmp = new Uint8Array(_strncmp.split(" ").map((v) => parseInt(v, 16)));
+import { NATIVE_CLIB_BIN, NATIVE_CLIB_SYMBOLS } from "./native_code.js";
 
 export type Voice = "dvd" | "f1" | "f2" | "imd1" | "jgr" | "m1" | "m2" | "r1";
 
@@ -123,16 +112,6 @@ export class AquesTalk {
     const hookMap: { [key: string]: (emu: V86Emu, ...args: any[]) => void } = {
       malloc: malloc_hook,
       free: free_hook,
-      strncmp: strncmp_hook,
-      strncpy: strncpy_hook,
-      strtok: strtok_hook,
-      strchr: strchr_hook,
-      stricmp: stricmp_hook,
-      _stricmp: stricmp_hook,
-      _initterm: initterm_hook,
-      initterm: initterm_hook,
-      __CxxFrameHandler: cxx_frame_handler_hook,
-      DisableThreadLibraryCalls: disable_thread_library_calls_hook,
     };
 
     for (const [name, info] of Object.entries(this.#iatHooks)) {
@@ -176,15 +155,31 @@ export class AquesTalk {
       emu.mem_write(this.#adjustFdivTargetAddress, to_bytes_uint32(0));
     }
 
-    // AquesTalk sometimes uses strncmp to check something.
-    // Optimization: overwrite IAT entry with native code snippet address.
-    const strncmpInfo = this.#iatHooks["strncmp"];
-    if (strncmpInfo) {
-      const strncmp_fn = this.#heap.set_mem_value(emu, strncmp);
-      emu.mem_write(
-        this.#baseAddress + strncmpInfo.rva,
-        to_bytes_uint32(strncmp_fn)
-      );
+    // Write native CLIB code to heap
+    const native_code_addr = this.#heap.set_mem_value(emu, NATIVE_CLIB_BIN);
+
+    // Apply native hooks by overwriting IAT entries
+    const nativeHookMap: { [key: string]: number } = {
+      strncmp: NATIVE_CLIB_SYMBOLS.strncmp,
+      strncpy: NATIVE_CLIB_SYMBOLS.strncpy,
+      strtok: NATIVE_CLIB_SYMBOLS.strtok,
+      strchr: NATIVE_CLIB_SYMBOLS.strchr,
+      stricmp: NATIVE_CLIB_SYMBOLS.stricmp,
+      _stricmp: NATIVE_CLIB_SYMBOLS.stricmp,
+      _initterm: NATIVE_CLIB_SYMBOLS._initterm,
+      initterm: NATIVE_CLIB_SYMBOLS._initterm,
+      __CxxFrameHandler: NATIVE_CLIB_SYMBOLS.__CxxFrameHandler,
+      DisableThreadLibraryCalls: NATIVE_CLIB_SYMBOLS.DisableThreadLibraryCalls,
+    };
+
+    for (const [name, offset] of Object.entries(nativeHookMap)) {
+      const info = this.#iatHooks[name];
+      if (info) {
+        emu.mem_write(
+          this.#baseAddress + info.rva,
+          to_bytes_uint32(native_code_addr + offset)
+        );
+      }
     }
 
     const size = this.#heap.set_mem_value(emu, new Uint8Array(8).fill(0));
