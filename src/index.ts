@@ -75,7 +75,7 @@ export class AquesTalk {
   #adjustFdivTargetAddress = 0;
 
   readonly HEAP_ADDRESS = 0x2000_0000;
-  readonly HEAP_LENGTH = 0x100_0000;
+  readonly HEAP_LENGTH = 0x1000_0000;
   // init内で初期化するため、nullで初期化
   #heap: Heap = null as unknown as Heap;
   constructor(file: ArrayBuffer, emu: V86Emu) {
