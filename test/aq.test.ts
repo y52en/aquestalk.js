@@ -4,11 +4,14 @@ import * as path from "path";
 import JSZip from "jszip";
 import { V86Emu } from "../src/v86_emu.js";
 import { AquesTalk, load } from "../src/index.js";
+import { convert_sjis } from "../src/util.js";
 import { fileURLToPath } from "url";
 import { createHash } from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const LONG_INPUT_SEED =
+  "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん、";
 
 describe("AquesTalk Integration", () => {
   let dllFile: ArrayBuffer;
@@ -59,16 +62,36 @@ describe("AquesTalk Integration", () => {
     expect(result1.length).not.toBe(result2.length);
   }, 30000);
 
-  it("should preserve output at the slow, maximum-length boundary", () => {
-    const input =
-      "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん、"
-        .repeat(4)
-        .slice(0, 128);
+  it("should preserve output at the DLL's total input boundary", () => {
+    const input = LONG_INPUT_SEED.repeat(50).slice(0, 2047);
+    expect(convert_sjis(input)).toHaveLength(4094);
+
     const result = aq.run(input, 50);
 
     expect(createHash("sha256").update(result).digest("hex")).toBe(
-      "82b6b88a2e047be279d373eb5606725f70fed16a509c0076b1fdc9c8a30c3f9c"
+      "29f14b427a88c9fbe669a4c442c22d3cd5e3c233d2105ac3667664f770e96a39"
     );
+  }, 60000);
+
+  it("should leave total and per-phrase length validation to the DLL", () => {
+    const maximumPhrase = "あ".repeat(255);
+    expect(String.fromCharCode(...aq.run(maximumPhrase, 300).slice(0, 4))).toBe(
+      "RIFF"
+    );
+    expect(() => aq.run(`${maximumPhrase}あ`, 300)).toThrow(
+      "AquesTalk_Synthe error. ERROR CODE: 102"
+    );
+
+    const overTotalLimit = LONG_INPUT_SEED.repeat(50)
+      .slice(0, 2048)
+      .replace("、", ",");
+    expect(convert_sjis(overTotalLimit)).toHaveLength(4095);
+    expect(() => aq.run(overTotalLimit, 300)).toThrow(
+      "AquesTalk_Synthe error. ERROR CODE: 200"
+    );
+
+    const recovered = aq.run("こんにちわ");
+    expect(String.fromCharCode(...recovered.slice(0, 4))).toBe("RIFF");
   }, 30000);
 
   it("should stay deterministic as v86 JIT blocks warm up", async () => {
@@ -131,6 +154,20 @@ describe("load", () => {
       expect(() => loaded.run("あ".repeat(200_000))).toThrow("heap over");
 
       const recovered = loaded.run("こんにちわ");
+      expect(String.fromCharCode(...recovered.slice(0, 4))).toBe("RIFF");
+    } finally {
+      await loaded.destroy();
+    }
+  }, 30000);
+
+  it("returns the DLL error and recovers when guest malloc is exhausted", async () => {
+    const loaded = await load("f1", { heapSize: 1200 * 1024 });
+    try {
+      expect(() => loaded.run("あ".repeat(50), 50)).toThrow(
+        "AquesTalk_Synthe error. ERROR CODE: 101"
+      );
+
+      const recovered = loaded.run("あ", 300);
       expect(String.fromCharCode(...recovered.slice(0, 4))).toBe("RIFF");
     } finally {
       await loaded.destroy();

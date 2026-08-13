@@ -97,7 +97,7 @@ main();
     - `baseUrl`: アセット(zip, wasm)のベースURLを個別に指定する場合に使用
     - `wasmPath`: `v86.wasm` へのパスを個別に指定する場合に使用（デフォルトは自動解決）
     - `memorySize`: エミュレータに割り当てる物理メモリ（bytes）。省略時はPEイメージ、ヒープ、スタックが収まる最小サイズを自動計算
-    - `heapSize`: 合成用ヒープ（bytes、デフォルトは8 MiB）
+    - `heapSize`: 合成用ヒープ（bytes、デフォルトは32 MiB）。同梱DLLが受理する最大長の音声記号列を最遅の`speed: 50`で合成できるサイズ
 
 ### `loadAquesTalk(zippath: string, dllpath: string, options?: Options): Promise<AquesTalk>`
 
@@ -115,6 +115,8 @@ main();
 
 - `koe`: 音声合成する文字列（AquesTalk記号表記）
 - `speed`: 再生速度（50〜300、デフォルト 100）
+
+入力は分割・省略せず、Shift-JISへ変換した1つの音声記号列としてDLLへ渡します。同梱DLLでは、正しい音声記号列の総入力上限はNULL終端を除いて4094 bytesです。文字数ではなくShift-JISのbytes数で決まり、1フレーズ内の読み記号数などにもDLL固有の制限があります。制限を超えた場合はDLLのエラーコードを含む例外を返し、次の`run()`は通常どおり使用できます。
 
 #### `destroy(): Promise<void>`
 

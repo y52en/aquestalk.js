@@ -60,7 +60,13 @@ export function strncpy_hook(emu: V86Emu, ..._args: unknown[]) {
   ret(emu);
 }
 
-export function free_hook(emu: V86Emu, ..._args: unknown[]) {
+export function free_hook(emu: V86Emu, ...args: unknown[]) {
+  const last_callback_arg = args[args.length - 1];
+  if (typeof last_callback_arg !== "function") {
+    throw new Error("free_hook: last argument must be a function");
+  }
+  const address = get_arg(emu, 0);
+  last_callback_arg(emu, address);
   ret(emu);
 }
 

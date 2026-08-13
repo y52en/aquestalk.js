@@ -59,7 +59,10 @@ export interface Options {
   heapSize?: number;
 }
 
-export const DEFAULT_HEAP_SIZE = 8 * 1024 * 1024;
+// The bundled DLL accepts up to 4094 Shift-JIS bytes. At the slowest speed,
+// all voices synthesize that engine boundary within this heap while retaining
+// headroom over the allocator's measured 22.1 MiB high-water mark.
+export const DEFAULT_HEAP_SIZE = 32 * 1024 * 1024;
 // Keep the relocated image clear of v86's multiboot entry at 1 MiB while
 // avoiding the original PE image base's 256 MiB address-space hole.
 const DEFAULT_LOAD_ADDRESS = 2 * 1024 * 1024;
@@ -205,17 +208,17 @@ export class AquesTalk {
 
     for (const [name, info] of Object.entries(pe.iatHooks)) {
       if (hookMap[name]) {
-        // We hook at the info.target address which is the unlinked address value from IAT.
-        // The DLL code jumps to this address when calling imports.
-        hook_lib_call(
-          emu,
-          info.target,
-          hookMap[name],
+        const callback =
           name === "malloc"
             ? (hookEmu: V86Emu, size: number) =>
-                this.#heap.allocate_zeroed(hookEmu, size)
-            : undefined
-        );
+                this.#heap.try_allocate_zeroed(hookEmu, size)
+            : name === "free"
+              ? (_hookEmu: V86Emu, address: number) =>
+                  this.#heap.free(address)
+              : undefined;
+        // We hook at the info.target address which is the unlinked address value from IAT.
+        // The DLL code jumps to this address when calling imports.
+        hook_lib_call(emu, info.target, hookMap[name], callback);
       }
     }
 

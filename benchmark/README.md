@@ -10,6 +10,9 @@ npm run benchmark
 
 # 呼び出し間でイベントループへ戻し、v86のJIT確定を許可
 BENCH_YIELD=1 npm run benchmark
+
+# DLLの入力上限を全8声種・最遅速度で検証（数分かかります）
+npm run benchmark:long
 ```
 
 環境変数:
@@ -19,21 +22,22 @@ BENCH_YIELD=1 npm run benchmark
 - `BENCH_YIELD`: `1` の場合、各呼び出し後に `setImmediate` でイベントループへ戻る
 - `BENCH_MEMORY_SIZE`: 物理メモリをbytesで上書きする
 - `BENCH_ROOT`: 比較対象のビルド済みワークツリーを指定する
+- `BENCH_LONG_VOICES`: `benchmark:long`の対象声種をカンマ区切りで限定する（例: `f1,m1`）
 
 ## 比較結果
 
-測定環境は Node.js 24.14.0、Linux x86-64、AMD EPYC 9V74（KVM）です。ベースコミット `4408ee6` とこの変更を、f1音声、ウォームアップ3回、測定10回の同一ハーネスで比較しました。
+測定環境は Node.js 24.14.0、Linux x86-64、AMD EPYC 9V74（KVM）です。ベースコミット `4408ee6` とこの変更を、f1音声、ウォームアップ5回、測定20回の同一ハーネスで比較しました。
 
 ### メモリと初期化
 
 | 指標 | 変更前 | 変更後 | 削減 |
 |---|---:|---:|---:|
-| 物理メモリ設定 | 1024 MiB | 11 MiB | 98.9% |
-| 構築後のexternal memory | 1048.28 MiB | 25.69 MiB | 97.5% |
-| 構築時間 | 178.89 ms | 2.18 ms | 98.8% |
+| 物理メモリ設定 | 1024 MiB | 35 MiB | 96.6% |
+| 構築後のexternal memory | 1048.28 MiB | 49.68 MiB | 95.3% |
+| 構築時間 | 164.80 ms | 2.26 ms | 98.6% |
 | 構築時のguest memory書き込み | 256.11 MiB | 0.61 MiB | 99.8% |
-| peak RSS（同期測定） | 437.56 MiB | 199.48 MiB | 54.4% |
-| `destroy()` 後のexternal memory | 1049.33 MiB | 4.02 MiB | 99.6% |
+| peak RSS | 478.46 MiB | 259.57 MiB | 45.8% |
+| `destroy()` 後のexternal memory | 1049.40 MiB | 4.01 MiB | 99.6% |
 
 ### 実行時間
 
@@ -41,9 +45,9 @@ BENCH_YIELD=1 npm run benchmark
 
 | ケース | 変更前 | 変更後 | 高速化 |
 |---|---:|---:|---:|
-| short | 58.15 ms | 5.92 ms | 9.83x |
-| medium | 265.55 ms | 23.09 ms | 11.50x |
-| long-slow | 953.23 ms | 72.69 ms | 13.11x |
+| short | 62.43 ms | 5.64 ms | 11.08x |
+| medium | 281.95 ms | 21.55 ms | 13.08x |
+| long-slow | 974.70 ms | 73.80 ms | 13.21x |
 
 イベントループへ戻らない同期連続実行ではJITの非同期確定が行われないため、効果は小さくなります。2回の独立測定ではケースごとに約-2〜6%で、実行ごとのばらつきを含め概ね同等でした。
 
@@ -57,6 +61,20 @@ BENCH_YIELD=1 npm run benchmark
 
 3ケースすべてで、変更前後の出力bytes数とSHA-256が一致しています。
 
+### 長文境界と`free()`
+
+同梱DLLを逆アセンブルすると、WAV用バッファを32 KiB単位で `malloc()` し、拡張時に新しい領域へコピーして古い領域を `free()` しています。従来のno-op `free()`では古い全バッファが合成終了まで累積していました。
+
+空き領域の分割・隣接領域の結合・再利用を実装し、Shift-JIS 4094 bytes（この測定文字列では日本語2047文字）・`speed: 50`で測定した結果:
+
+- WAV出力: 8,677,276 bytes
+- 同時に生存する割り当てのpeak: 16.57 MiB
+- 断片化を含むヒープhigh-water mark: 22.07 MiB
+- `malloc`: 269回、`free`: 266回
+- デフォルトヒープ: 32 MiB（high-water markに約10 MiBの余裕）
+
+同じ4094-byte入力は全8声種で成功し、4095 bytesでは全8声種ともDLL自身がエラーコード200を返しました。単一フレーズの反復入力も255読みまで成功し、256ではDLLが拒否します。ラッパーによる分割・切り捨て・読み替えは行っていません。
+
 ### 反復ロード・破棄
 
-同じWASMパスのコンパイル済みモジュールを共有し、インスタンスごとの再コンパイルを避けています。`load()` → 合成 → `destroy()` → GCを10回繰り返した比較では、10回目のexternal memoryはいずれも3.37 MiBで一定でした。モジュール共有なしではRSSが273.88 MiBまで増えましたが、共有ありでは198.79 MiBで安定し、27.4%低下しました。
+同じWASMパスのコンパイル済みモジュールを共有し、インスタンスごとの再コンパイルを避けています。`load()` → 合成 → `destroy()` → GCを10回繰り返した測定では、10回目のexternal memoryは3.46 MiB、RSSは194.01 MiBで、external memoryの増加は見られませんでした。

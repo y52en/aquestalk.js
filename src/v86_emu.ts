@@ -32,7 +32,9 @@ const STOP_PORT = 0xdf;
 const STOP_TRAMPOLINE = new Uint8Array([0xe6, STOP_PORT]);
 const MIN_VGA_MEMORY_SIZE = 256 * 1024;
 const MAX_CACHED_WASM_MODULES = 4;
-export const DEFAULT_MEMORY_SIZE = 11 * 1024 * 1024;
+// Enough for the relocated PE image, AquesTalk's default 32 MiB heap, and the
+// guest stack when V86Emu and AquesTalk are constructed directly.
+export const DEFAULT_MEMORY_SIZE = 35 * 1024 * 1024;
 const WASM_MODULE_CACHE = new Map<string, Promise<WebAssembly.Module>>();
 
 async function loadWasmModule(wasmPath: string): Promise<WebAssembly.Module> {
