@@ -18,11 +18,12 @@
     "types": "./dist/index.d.ts"
   },
   "scripts": {
-    "build": "node scripts/embed_native.js && tsc",
+    "build": "tsc",
     "prebuild": "node scripts/embed_native.js",
     "start": "tsc -w",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "benchmark": "tsc && node --expose-gc benchmark/benchmark.mjs"
   },
   "dependencies": {
     "encoding-japanese": "^2.0.0",

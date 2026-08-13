@@ -13,7 +13,7 @@ async function main() {
 
   const emu = new V86Emu();
   const wasmPath = path.join(__dirname, "..", "node_modules", "v86", "build", "v86.wasm");
-  await emu.init({ wasmPath, memorySize: 1024 * 1024 * 1024 });
+  await emu.init({ wasmPath });
 
   const aq = new AquesTalk(dllFile, emu);
 

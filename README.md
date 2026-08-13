@@ -61,9 +61,7 @@ import { load as loadKanji2Koe } from 'kanji2koe-openjtalk';
 
 async function main() {
   const kanji2koe = await loadKanji2Koe();
-  const aq = await loadAquesTalk('f1', {
-    memorySize: 1024 * 1024 * 1024,
-  });
+  const aq = await loadAquesTalk('f1');
 
   const koe = kanji2koe.convert('今日は良い天気ですね。');
   const wav = aq.run(koe, 100);
@@ -98,7 +96,8 @@ main();
 - `options`:
     - `baseUrl`: アセット(zip, wasm)のベースURLを個別に指定する場合に使用
     - `wasmPath`: `v86.wasm` へのパスを個別に指定する場合に使用（デフォルトは自動解決）
-    - `memorySize`: エミュレータに割り当てるメモリサイズ（MB）
+    - `memorySize`: エミュレータに割り当てる物理メモリ（bytes）。省略時はPEイメージ、ヒープ、スタックが収まる最小サイズを自動計算
+    - `heapSize`: 合成用ヒープ（bytes、デフォルトは8 MiB）
 
 ### `loadAquesTalk(zippath: string, dllpath: string, options?: Options): Promise<AquesTalk>`
 
@@ -120,6 +119,22 @@ main();
 #### `destroy(): Promise<void>`
 
 エミュレータを停止し、使用していたすべてのリソース（メモリ等）を解放します。
+
+## ベンチマーク
+
+同期連続実行を測定する場合:
+
+```bash
+npm run benchmark
+```
+
+呼び出し間でイベントループへ戻し、v86のJIT確定を許可する場合:
+
+```bash
+BENCH_YIELD=1 npm run benchmark
+```
+
+ベンチマークは各反復のWAV出力をSHA-256で検証し、実行時間、RSS、外部メモリ、エミュレータI/O量をJSONで出力します。測定方法と比較結果は [`benchmark/README.md`](benchmark/README.md) を参照してください。
 
 ## ライセンス
 

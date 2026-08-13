@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { push, pop, jmp, call, ret, get_arg } from "../src/x86_util";
 import { V86Emu, REG_ESP } from "../src/v86_emu";
-import { to_bytes_uint32 } from "../src/util";
 
 describe("x86_util", () => {
   let mockEmu: any;
@@ -10,6 +9,8 @@ describe("x86_util", () => {
     mockEmu = {
       mem_write: vi.fn(),
       mem_read: vi.fn(),
+      mem_write_uint32: vi.fn(),
+      mem_read_uint32: vi.fn(),
       reg_read: vi.fn(),
       reg_write: vi.fn(),
       get_eip: vi.fn(),
@@ -31,7 +32,7 @@ describe("x86_util", () => {
       push(mockEmu, 0x12345678);
 
       expect(mockEmu.reg_write).toHaveBeenCalledWith(REG_ESP, 0x0ffc);
-      expect(mockEmu.mem_write).toHaveBeenCalledWith(0x0ffc, to_bytes_uint32(0x12345678));
+      expect(mockEmu.mem_write_uint32).toHaveBeenCalledWith(0x0ffc, 0x12345678);
     });
   });
 
@@ -45,14 +46,12 @@ describe("x86_util", () => {
       mockEmu.reg_write.mockImplementation((reg: number, val: number) => {
         if (reg === REG_ESP) esp = val;
       });
-      mockEmu.mem_read.mockImplementation((addr: number, size: number) => {
-        if (addr === 0x0ffc && size === 4) return to_bytes_uint32(0x12345678);
-        return new Uint8Array(size);
-      });
+      mockEmu.mem_read_uint32.mockReturnValue(0x12345678);
 
       const value = pop(mockEmu);
 
       expect(value).toBe(0x12345678);
+      expect(mockEmu.mem_read_uint32).toHaveBeenCalledWith(0x0ffc);
       expect(mockEmu.reg_write).toHaveBeenCalledWith(REG_ESP, 0x1000);
     });
   });
@@ -79,7 +78,7 @@ describe("x86_util", () => {
       call(mockEmu, 0x2000);
 
       expect(mockEmu.reg_write).toHaveBeenCalledWith(REG_ESP, 0x2ffc);
-      expect(mockEmu.mem_write).toHaveBeenCalledWith(0x2ffc, to_bytes_uint32(0x1000));
+      expect(mockEmu.mem_write_uint32).toHaveBeenCalledWith(0x2ffc, 0x1000);
       expect(mockEmu.set_eip).toHaveBeenCalledWith(0x2000);
     });
   });
@@ -94,10 +93,7 @@ describe("x86_util", () => {
       mockEmu.reg_write.mockImplementation((reg: number, val: number) => {
         if (reg === REG_ESP) esp = val;
       });
-      mockEmu.mem_read.mockImplementation((addr: number, size: number) => {
-        if (addr === 0x2ffc && size === 4) return to_bytes_uint32(0x2000);
-        return new Uint8Array(size);
-      });
+      mockEmu.mem_read_uint32.mockReturnValue(0x2000);
 
       ret(mockEmu);
 
@@ -112,10 +108,10 @@ describe("x86_util", () => {
         if (reg === REG_ESP) return 0x1000;
         return 0;
       });
-      mockEmu.mem_read.mockImplementation((addr: number, size: number) => {
-        if (addr === 0x1004 && size === 4) return to_bytes_uint32(0xaaaa);
-        if (addr === 0x1008 && size === 4) return to_bytes_uint32(0xbbbb);
-        return new Uint8Array(size);
+      mockEmu.mem_read_uint32.mockImplementation((addr: number) => {
+        if (addr === 0x1004) return 0xaaaa;
+        if (addr === 0x1008) return 0xbbbb;
+        return 0;
       });
 
       const arg0 = get_arg(mockEmu, 0);
@@ -123,8 +119,8 @@ describe("x86_util", () => {
 
       expect(arg0).toBe(0xaaaa);
       expect(arg1).toBe(0xbbbb);
-      expect(mockEmu.mem_read).toHaveBeenCalledWith(0x1004, 4);
-      expect(mockEmu.mem_read).toHaveBeenCalledWith(0x1008, 4);
+      expect(mockEmu.mem_read_uint32).toHaveBeenCalledWith(0x1004);
+      expect(mockEmu.mem_read_uint32).toHaveBeenCalledWith(0x1008);
     });
   });
 });
