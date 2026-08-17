@@ -19,21 +19,18 @@ describe("AquesTalk Integration", () => {
   let aq: AquesTalk;
 
   beforeAll(async () => {
-    // Load zip file
     const zipPath = path.join(__dirname, "..", "voices", "f1.zip");
     const zipBuf = fs.readFileSync(zipPath);
     const zip = new JSZip();
     const zipRoot = await zip.loadAsync(zipBuf);
     dllFile = await zipRoot.files["f1/AquesTalk.dll"].async("arraybuffer");
 
-    // Initialize v86 emulator
     emu = new V86Emu();
     const wasmPath = path.join(__dirname, "..", "voices", "v86.wasm");
     await emu.init({ wasmPath });
 
-    // Create AquesTalk instance once
     aq = new AquesTalk(dllFile, emu);
-  }, 30000); // 30s timeout for init
+  }, 30000);
 
   afterAll(async () => {
     await aq.destroy();
@@ -41,11 +38,10 @@ describe("AquesTalk Integration", () => {
 
   it("should synthesize speech and return a WAV file", () => {
     const result = aq.run("ゆっくりしていってね");
-    
+
     expect(result).toBeDefined();
-    expect(result.length).toBeGreaterThan(44); // MIN WAV header size
-    
-    // Check RIFF header
+    expect(result.length).toBeGreaterThan(44);
+
     const header = String.fromCharCode(...result.slice(0, 4));
     expect(header).toBe("RIFF");
     expect(createHash("sha256").update(result).digest("hex")).toBe(
@@ -56,10 +52,24 @@ describe("AquesTalk Integration", () => {
   it("should handle multiple calls", () => {
     const result1 = aq.run("こんにちわ");
     const result2 = aq.run("こんばんわ");
-    
+
     expect(result1).toBeDefined();
     expect(result2).toBeDefined();
     expect(result1.length).not.toBe(result2.length);
+  }, 30000);
+
+  it("should return WAV bytes independent from later guest-memory reuse", () => {
+    const result1 = aq.run("こんにちわ");
+    const snapshot = Uint8Array.from(result1);
+    const hash = createHash("sha256").update(snapshot).digest("hex");
+
+    // run() resets and reuses guest allocations. A previous return value must
+    // remain owned by JS so callers do not need an extra .slice().
+    aq.run("こんばんわ");
+    aq.run("ゆっくりしていってね");
+
+    expect(result1).toEqual(snapshot);
+    expect(createHash("sha256").update(result1).digest("hex")).toBe(hash);
   }, 30000);
 
   it("should preserve output at the DLL's total input boundary", () => {
