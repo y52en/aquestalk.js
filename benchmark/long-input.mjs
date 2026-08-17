@@ -28,6 +28,26 @@ const soakCorpus = [
   { input: "あ".repeat(255), speed: 300 },
 ];
 
+function fingerprint(wav) {
+  return {
+    bytes: wav.byteLength,
+    sha256: createHash("sha256").update(wav).digest("hex"),
+  };
+}
+
+function assertDeterministicWav(wav, expected, voice, iteration, sampleIndex) {
+  if (String.fromCharCode(...wav.subarray(0, 4)) !== "RIFF") {
+    throw new Error(`${voice}: non-WAV result at soak iteration ${iteration}`);
+  }
+  const actual = fingerprint(wav);
+  if (actual.bytes !== expected.bytes || actual.sha256 !== expected.sha256) {
+    throw new Error(
+      `${voice}: nondeterministic WAV at soak iteration ${iteration} corpus ${sampleIndex}: ` +
+        `expected ${expected.bytes}/${expected.sha256}, got ${actual.bytes}/${actual.sha256}`
+    );
+  }
+}
+
 function errorCode(operation) {
   try {
     operation();
@@ -63,22 +83,34 @@ async function runSoak(aq, voice) {
     throw new Error("soak mode requires node --expose-gc");
   }
 
-  // Warm both the emulator/JIT and V8 allocations before recording a baseline.
-  for (let i = 0; i < 20; i += 1) {
-    const sample = soakCorpus[i % soakCorpus.length];
-    aq.run(sample.input, sample.speed);
+  // Establish exact expected output before warming the JIT. The soak validates
+  // both the WAV structure and every byte, so a corruption that still starts
+  // with RIFF cannot pass unnoticed.
+  const expected = [];
+  for (const sample of soakCorpus) {
+    expected.push(fingerprint(aq.run(sample.input, sample.speed)));
     await new Promise(resolve => setImmediate(resolve));
   }
+
+  // Warm both v86 JIT and V8 allocations while checking that warming itself
+  // cannot change the generated waveform.
+  for (let i = 0; i < 20; i += 1) {
+    const sampleIndex = i % soakCorpus.length;
+    const sample = soakCorpus[sampleIndex];
+    const wav = aq.run(sample.input, sample.speed);
+    assertDeterministicWav(wav, expected[sampleIndex], voice, `warmup-${i + 1}`, sampleIndex);
+    await new Promise(resolve => setImmediate(resolve));
+  }
+
   const before = await collectMemory();
   const samples = [{ iteration: 0, ...before }];
   let lastWav = null;
 
   for (let i = 1; i <= soakIterations; i += 1) {
-    const sample = soakCorpus[i % soakCorpus.length];
+    const sampleIndex = i % soakCorpus.length;
+    const sample = soakCorpus[sampleIndex];
     lastWav = aq.run(sample.input, sample.speed);
-    if (String.fromCharCode(...lastWav.subarray(0, 4)) !== "RIFF") {
-      throw new Error(`${voice}: non-WAV result at soak iteration ${i}`);
-    }
+    assertDeterministicWav(lastWav, expected[sampleIndex], voice, i, sampleIndex);
 
     // Give v86's async JIT finalization a chance to run, matching browser-style
     // repeated comment synthesis rather than one giant synchronous loop.
@@ -106,6 +138,7 @@ async function runSoak(aq, voice) {
 
   return {
     iterations: soakIterations,
+    expected,
     before,
     after,
     externalGrowth,
