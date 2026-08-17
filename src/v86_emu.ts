@@ -29,7 +29,9 @@ interface HookEntry {
 
 const HOOK_PORT_BASE = 0xe0;
 const STOP_PORT = 0xdf;
-const STOP_TRAMPOLINE = new Uint8Array([0xe6, STOP_PORT]);
+// `_stopped` is observed by JS only after the current v86 JIT block returns.
+// HLT immediately after OUT prevents a warmed block from running on into the NOP sled.
+const STOP_TRAMPOLINE = new Uint8Array([0xe6, STOP_PORT, 0xf4]);
 const MIN_VGA_MEMORY_SIZE = 256 * 1024;
 const MAX_CACHED_WASM_MODULES = 4;
 // Enough for the relocated PE image, AquesTalk's default 32 MiB heap, and the
