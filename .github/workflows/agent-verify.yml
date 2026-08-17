@@ -20,6 +20,4 @@ jobs:
       - name: f1 10000-call deterministic soak
         run: npm run benchmark:soak
       - name: all voices 2000-call deterministic soak
-        run: |
-          npm run build
-          BENCH_LONG_VOICES=dvd,f1,f2,imd1,jgr,m1,m2,r1 BENCH_SOAK_ITERATIONS=2000 node --expose-gc benchmark/long-input.mjs
+        run: BENCH_LONG_VOICES=dvd,f1,f2,imd1,jgr,m1,m2,r1 BENCH_SOAK_ITERATIONS=2000 node --expose-gc benchmark/long-input.mjs
