@@ -2,40 +2,24 @@ name: Agent verification
 
 on:
   push:
-    branches: [agent/optimize-performance-memory]
-
-permissions:
-  contents: write
+    branches:
+      - agent/optimize-performance-memory
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: agent/optimize-performance-memory
-      - name: Patch return trap
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('src/v86_emu.ts'); s=p.read_text()
-          old='const STOP_TRAMPOLINE = new Uint8Array([0xe6, STOP_PORT]);'
-          new='// HLT stops the current warmed JIT block immediately after the OUT callback.\nconst STOP_TRAMPOLINE = new Uint8Array([0xe6, STOP_PORT, 0xf4]);'
-          if old in s: p.write_text(s.replace(old,new,1))
-          elif 'new Uint8Array([0xe6, STOP_PORT, 0xf4])' not in s: raise SystemExit('unexpected stop trampoline')
-          PY
-          if ! git diff --quiet -- src/v86_emu.ts; then
-            git config user.name github-actions[bot]
-            git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-            git add src/v86_emu.ts
-            git commit -m 'fix: halt immediately after the v86 return trap'
-            git push origin HEAD:agent/optimize-performance-memory
-          fi
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npm run benchmark:soak
+      - name: f1 10000-call deterministic soak
+        run: npm run benchmark:soak
+      - name: all voices 2000-call deterministic soak
+        run: |
+          npm run build
+          BENCH_LONG_VOICES=dvd,f1,f2,imd1,jgr,m1,m2,r1 BENCH_SOAK_ITERATIONS=2000 node --expose-gc benchmark/long-input.mjs
