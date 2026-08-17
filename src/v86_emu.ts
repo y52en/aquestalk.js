@@ -80,6 +80,7 @@ export class V86Emu {
   private hooks: Map<number, HookEntry> = new Map();
   private _stopped = false;
   private stopHandlerRegistered = false;
+  private stopAddress: number | null = null;
   private nextHookPort = HOOK_PORT_BASE;
 
   /**
@@ -374,13 +375,26 @@ export class V86Emu {
 
   /**
    * Start emulation from `start` address until reaching `until` address.
+   *
+   * The stop trampoline is installed once and never toggled back to NOPs. v86
+   * may retain translated JIT blocks across calls; mutating executable bytes at
+   * the stop address without invalidating those blocks eventually mixes code
+   * compiled from the two byte patterns. A stable trampoline keeps guest memory
+   * and every warmed JIT block in agreement.
    */
   emu_start(start: number, until: number): void {
     this.set_eip(start);
     this._stopped = false;
 
-    const originalBytes = new Uint8Array(this.cpu.read_blob(until, 2));
-    this.cpu.write_blob(STOP_TRAMPOLINE, until);
+    if (this.stopAddress === null) {
+      this.assert_memory_range(until, STOP_TRAMPOLINE.byteLength);
+      this.cpu.write_blob(STOP_TRAMPOLINE, until);
+      this.stopAddress = until;
+    } else if (this.stopAddress !== until) {
+      throw new Error(
+        `V86Emu stop address changed from 0x${this.stopAddress.toString(16)} to 0x${until.toString(16)}`
+      );
+    }
 
     if (!this.stopHandlerRegistered) {
       this.cpu.io.register_write(STOP_PORT, this, (_value: number) => {
@@ -389,8 +403,9 @@ export class V86Emu {
       this.stopHandlerRegistered = true;
     }
 
-    // Run the CPU in a tight loop until stopped
-    // Clear HLT state (multiboot entry point has HLT instruction)
+    // Run the CPU in a tight loop until stopped. The return area after the OUT
+    // instruction remains a NOP sled because a compiled v86 block can continue
+    // for a bounded distance after the port callback flips `_stopped`.
     this.cpu.in_hlt[0] = 0;
     try {
       while (!this._stopped) {
@@ -402,10 +417,6 @@ export class V86Emu {
       } else {
         throw e;
       }
-    } finally {
-      // Restore executable memory after every run. Leaving the trap in a JIT
-      // block changes v86's execution behaviour as additional blocks compile.
-      this.cpu.write_blob(originalBytes, until);
     }
   }
 
@@ -445,6 +456,7 @@ export class V86Emu {
     this.cpu = null;
     this.emulator = null;
     this.stopHandlerRegistered = false;
+    this.stopAddress = null;
     if (emulator) await emulator.destroy();
   }
 }
