@@ -25,8 +25,7 @@ async function main() {
   const startInit = performance.now();
   const emu = new V86Emu();
   const wasmPath = path.join(__dirname, "..", "node_modules", "v86", "build", "v86.wasm");
-  // Need 1GB memory to accommodate BASE_ADDRESS (0x10000000) and HEAP (0x20000000)
-  await emu.init({ wasmPath, memorySize: 1024 * 1024 * 1024 });
+  await emu.init({ wasmPath });
   const initTime = performance.now() - startInit;
   console.log(`v86 initialized in ${initTime.toFixed(1)}ms`);
 

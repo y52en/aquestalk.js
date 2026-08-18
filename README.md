@@ -61,9 +61,7 @@ import { load as loadKanji2Koe } from 'kanji2koe-openjtalk';
 
 async function main() {
   const kanji2koe = await loadKanji2Koe();
-  const aq = await loadAquesTalk('f1', {
-    memorySize: 1024 * 1024 * 1024,
-  });
+  const aq = await loadAquesTalk('f1');
 
   const koe = kanji2koe.convert('今日は良い天気ですね。');
   const wav = aq.run(koe, 100);
@@ -98,7 +96,8 @@ main();
 - `options`:
     - `baseUrl`: アセット(zip, wasm)のベースURLを個別に指定する場合に使用
     - `wasmPath`: `v86.wasm` へのパスを個別に指定する場合に使用（デフォルトは自動解決）
-    - `memorySize`: エミュレータに割り当てるメモリサイズ（MB）
+    - `memorySize`: エミュレータに割り当てる物理メモリ（bytes）。省略時はPEイメージ、ヒープ、スタックが収まる最小サイズを自動計算
+    - `heapSize`: 合成用ヒープ（bytes、デフォルトは32 MiB）。同梱DLLが受理する最大長の音声記号列を最遅の`speed: 50`で合成できるサイズ
 
 ### `loadAquesTalk(zippath: string, dllpath: string, options?: Options): Promise<AquesTalk>`
 
@@ -117,9 +116,27 @@ main();
 - `koe`: 音声合成する文字列（AquesTalk記号表記）
 - `speed`: 再生速度（50〜300、デフォルト 100）
 
+入力は分割・省略せず、Shift-JISへ変換した1つの音声記号列としてDLLへ渡します。同梱DLLでは、正しい音声記号列の総入力上限はNULL終端を除いて4094 bytesです。文字数ではなくShift-JISのbytes数で決まり、1フレーズ内の読み記号数などにもDLL固有の制限があります。制限を超えた場合はDLLのエラーコードを含む例外を返し、次の`run()`は通常どおり使用できます。
+
 #### `destroy(): Promise<void>`
 
 エミュレータを停止し、使用していたすべてのリソース（メモリ等）を解放します。
+
+## ベンチマーク
+
+同期連続実行を測定する場合:
+
+```bash
+npm run benchmark
+```
+
+呼び出し間でイベントループへ戻し、v86のJIT確定を許可する場合:
+
+```bash
+BENCH_YIELD=1 npm run benchmark
+```
+
+ベンチマークは各反復のWAV出力をSHA-256で検証し、実行時間、RSS、外部メモリ、エミュレータI/O量をJSONで出力します。測定方法と比較結果は [`benchmark/README.md`](benchmark/README.md) を参照してください。
 
 ## ライセンス
 

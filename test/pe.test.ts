@@ -2,6 +2,12 @@ import { describe, it, expect } from "vitest";
 import { parsePE } from "../src/pe";
 
 describe("parsePE", () => {
+  it("should reject a truncated DOS header", () => {
+    expect(() => parsePE(new ArrayBuffer(8))).toThrow(
+      "Invalid PE DOS header"
+    );
+  });
+
   it("should throw when MZ header is missing", () => {
     const buffer = new ArrayBuffer(1024);
     expect(() => parsePE(buffer)).toThrow("Not a PE file (MZ header missing)");
@@ -64,6 +70,19 @@ describe("parsePE", () => {
     expect(() => parsePE(buffer)).toThrow("Only PE32 (32-bit) is supported");
   });
 
+  it("should reject a truncated optional header", () => {
+    const buffer = new ArrayBuffer(128);
+    const view = new DataView(buffer);
+    const peOffset = 0x40;
+    view.setUint16(0, 0x5a4d, true);
+    view.setUint32(0x3c, peOffset, true);
+    view.setUint32(peOffset, 0x00004550, true);
+    view.setUint16(peOffset + 4, 0x014c, true);
+    view.setUint16(peOffset + 20, 0xe0, true);
+
+    expect(() => parsePE(buffer)).toThrow("Invalid PE optional header");
+  });
+
   it("should parse minimal successful PE header", () => {
     const buffer = new ArrayBuffer(1024);
     const view = new DataView(buffer);
@@ -93,7 +112,9 @@ describe("parsePE", () => {
 
     // ImageBase = 0x10000000
     const imageBase = 0x10000000;
+    const imageSize = 0x2000;
     view.setUint32(optionalHeaderOffset + 28, imageBase, true);
+    view.setUint32(optionalHeaderOffset + 56, imageSize, true);
 
     // Data Directories - zeroed out naturally by ArrayBuffer
 
@@ -101,10 +122,13 @@ describe("parsePE", () => {
 
     expect(result).toEqual({
       baseAddress: imageBase,
+      imageSize,
       aquesTalkSyntheRVA: 0,
       iatHooks: {},
       adjustFdivRVA: 0,
       adjustFdivTarget: 0,
+      writableSections: [],
+      baseRelocationOffsets: [],
     });
   });
 });

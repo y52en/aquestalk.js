@@ -1,17 +1,16 @@
 import { V86Emu, REG_ESP } from "./v86_emu.js";
 import { reg_read_uint32, reg_write_uint32 } from "./emu_util.js";
-import { from_bytes_uint32, to_bytes_uint32 } from "./util.js";
 
 export function push(emu: V86Emu, value: number) {
-  reg_write_uint32(emu, REG_ESP, reg_read_uint32(emu, REG_ESP) - 4);
-  emu.mem_write(reg_read_uint32(emu, REG_ESP), to_bytes_uint32(value));
+  const esp = reg_read_uint32(emu, REG_ESP) - 4;
+  reg_write_uint32(emu, REG_ESP, esp);
+  emu.mem_write_uint32(esp, value);
 }
 
 export function pop(emu: V86Emu): number {
-  const value = from_bytes_uint32(
-    emu.mem_read(reg_read_uint32(emu, REG_ESP), 4)
-  );
-  reg_write_uint32(emu, REG_ESP, reg_read_uint32(emu, REG_ESP) + 4);
+  const esp = reg_read_uint32(emu, REG_ESP);
+  const value = emu.mem_read_uint32(esp);
+  reg_write_uint32(emu, REG_ESP, esp + 4);
   return value;
 }
 
@@ -25,12 +24,9 @@ export function call(emu: V86Emu, address: number) {
 }
 
 export function ret(emu: V86Emu) {
-  const ret_address = pop(emu);
-  jmp(emu, ret_address);
+  jmp(emu, pop(emu));
 }
 
 export function get_arg(emu: V86Emu, num: number): number {
-  return from_bytes_uint32(
-    emu.mem_read(reg_read_uint32(emu, REG_ESP) + 4 * (1 + num), 4)
-  );
+  return emu.mem_read_uint32(reg_read_uint32(emu, REG_ESP) + 4 * (1 + num));
 }

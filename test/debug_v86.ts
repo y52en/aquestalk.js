@@ -24,7 +24,7 @@ async function main() {
   // Initialize v86
   const emu = new V86Emu();
   const wasmPath = path.join(__dirname, '..', 'node_modules', 'v86', 'build', 'v86.wasm');
-  await emu.init({ wasmPath, memorySize: 1024 * 1024 * 1024 });
+  await emu.init({ wasmPath });
 
   const BASE_ADDRESS = 0x10000000;
   const HEAP_ADDRESS = 0x20000000;

@@ -18,11 +18,14 @@
     "types": "./dist/index.d.ts"
   },
   "scripts": {
-    "build": "node scripts/embed_native.js && tsc",
+    "build": "tsc",
     "prebuild": "node scripts/embed_native.js",
     "start": "tsc -w",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "benchmark": "tsc && node --expose-gc benchmark/benchmark.mjs",
+    "benchmark:long": "tsc && node --expose-gc benchmark/long-input.mjs",
+    "benchmark:soak": "tsc && BENCH_LONG_VOICES=f1 BENCH_SOAK_ITERATIONS=10000 node --expose-gc benchmark/long-input.mjs"
   },
   "dependencies": {
     "encoding-japanese": "^2.0.0",

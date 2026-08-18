@@ -34,9 +34,7 @@ function App() {
       setIsLoading(true);
       setTalkEngine(null);
       try {
-        engine = await load(selectedVoice.id, {
-          memorySize: 1024 * 1024 * 1024, // 1GB
-        });
+        engine = await load(selectedVoice.id);
         setTalkEngine(engine);
       } catch (e) {
         console.error(e);

@@ -25,28 +25,80 @@ interface HookEntry {
   callback: HookCallback;
   originalBytes: Uint8Array;
   userData: any;
-  port: number;
 }
 
-const HOOK_PORT_BASE = 0xE0;
+const HOOK_PORT_BASE = 0xe0;
+const STOP_PORT = 0xdf;
+// `_stopped` is observed by JS only after the current v86 JIT block returns.
+// HLT immediately after OUT prevents a warmed block from running on into the NOP sled.
+const STOP_TRAMPOLINE = new Uint8Array([0xe6, STOP_PORT, 0xf4]);
+const MIN_VGA_MEMORY_SIZE = 256 * 1024;
+const MAX_CACHED_WASM_MODULES = 4;
+// Enough for the relocated PE image, AquesTalk's default 32 MiB heap, and the
+// guest stack when V86Emu and AquesTalk are constructed directly.
+export const DEFAULT_MEMORY_SIZE = 35 * 1024 * 1024;
+const WASM_MODULE_CACHE = new Map<string, Promise<WebAssembly.Module>>();
+
+async function loadWasmModule(wasmPath: string): Promise<WebAssembly.Module> {
+  const cached = WASM_MODULE_CACHE.get(wasmPath);
+  if (cached) return cached;
+
+  const loading = (async () => {
+    let bytes: ArrayBuffer | Uint8Array;
+    if (
+      typeof process !== "undefined" &&
+      process.versions?.node &&
+      (wasmPath.startsWith("file://") || !wasmPath.includes("://"))
+    ) {
+      const fs = await import("fs/promises");
+      const { fileURLToPath } = await import("url");
+      bytes = await fs.readFile(
+        wasmPath.startsWith("file://") ? fileURLToPath(wasmPath) : wasmPath
+      );
+    } else {
+      const response = await fetch(wasmPath);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ${wasmPath}: ${response.status}`);
+      }
+      bytes = await response.arrayBuffer();
+    }
+    return WebAssembly.compile(bytes as BufferSource);
+  })();
+  if (WASM_MODULE_CACHE.size >= MAX_CACHED_WASM_MODULES) {
+    WASM_MODULE_CACHE.delete(WASM_MODULE_CACHE.keys().next().value!);
+  }
+  WASM_MODULE_CACHE.set(wasmPath, loading);
+  try {
+    return await loading;
+  } catch (error) {
+    WASM_MODULE_CACHE.delete(wasmPath);
+    throw error;
+  }
+}
 
 export class V86Emu {
   private emulator: any; // V86 instance
   private cpu: any; // CPU object (v86.cpu)
   private hooks: Map<number, HookEntry> = new Map();
-  private portToHook: Map<number, HookEntry> = new Map();
   private _stopped = false;
+  private stopHandlerRegistered = false;
+  private stopAddress: number | null = null;
   private nextHookPort = HOOK_PORT_BASE;
-
-  constructor() {}
 
   /**
    * Initialize the V86 emulator.
    * Creates a V86 instance with multiboot to get flat 32-bit protected mode.
    */
   async init(options: { memorySize?: number; wasmPath?: string } = {}) {
-    const memorySize = options.memorySize ?? 1024 * 1024 * 1024; // 1GB default
+    const memorySize = options.memorySize ?? DEFAULT_MEMORY_SIZE;
     const wasmPath = options.wasmPath;
+    if (
+      !Number.isSafeInteger(memorySize) ||
+      memorySize <= 0 ||
+      memorySize > 0xffff_ffff
+    ) {
+      throw new RangeError(`invalid memory size: ${memorySize}`);
+    }
 
     // Create a minimal multiboot binary: just a HLT loop
     const MULTIBOOT_MAGIC = 0x1BADB002;
@@ -73,12 +125,32 @@ export class V86Emu {
 
     const v86Options: any = {
       memory_size: memorySize,
-      vga_memory_size: 0,
+      // v86 treats 0 as "use the 8 MiB default". Its actual minimum is 256 KiB.
+      vga_memory_size: MIN_VGA_MEMORY_SIZE,
       autostart: false,
       multiboot: { buffer: bin },
     };
     if (wasmPath) {
-      v86Options.wasm_path = wasmPath;
+      v86Options.wasm_fn = async (imports: WebAssembly.Imports) => {
+        const instantiate = async (path: string) => {
+          const module = await loadWasmModule(path);
+          return WebAssembly.instantiate(module, imports);
+        };
+        try {
+          return (await instantiate(wasmPath)).exports;
+        } catch (primaryError) {
+          const fallbackPath = wasmPath.replace(
+            "v86.wasm",
+            "v86-fallback.wasm"
+          );
+          if (fallbackPath === wasmPath) throw primaryError;
+          try {
+            return (await instantiate(fallbackPath)).exports;
+          } catch {
+            throw primaryError;
+          }
+        }
+      };
     }
 
     this.emulator = new V86(v86Options);
@@ -96,6 +168,26 @@ export class V86Emu {
     // This is needed because multiboot mode's segments don't have GDT entries,
     // and operations like POP SS trigger #GP without valid descriptors.
     this._setupGDT();
+  }
+
+  get memory_size(): number {
+    return this.cpu.memory_size[0] >>> 0;
+  }
+
+  assert_memory_range(addr: number, size: number): void {
+    if (
+      !Number.isSafeInteger(addr) ||
+      !Number.isSafeInteger(size) ||
+      addr < 0 ||
+      size < 0 ||
+      addr + size > this.memory_size
+    ) {
+      throw new RangeError(
+        `memory range 0x${addr.toString(16)}..0x${(
+          addr + size
+        ).toString(16)} exceeds ${this.memory_size} bytes`
+      );
+    }
   }
 
   /**
@@ -116,23 +208,23 @@ export class V86Emu {
 
     // Entry 1: Code segment (selector 0x08)
     // Limit[15:0] = 0xFFFF, Base[15:0] = 0x0000
-    gdtView.setUint16(8, 0xffff, true);   // limit low
-    gdtView.setUint16(10, 0x0000, true);  // base low
+    gdtView.setUint16(8, 0xffff, true); // limit low
+    gdtView.setUint16(10, 0x0000, true); // base low
     // Base[23:16] = 0x00, Access byte: Present=1, DPL=11 (3), S=1, Type=1010 (exec/read) = 0xFA
-    gdtView.setUint8(12, 0x00);            // base mid
-    gdtView.setUint8(13, 0xfa);            // access: P=1, DPL=3, S=1, E=1, DC=0, RW=1, A=0
+    gdtView.setUint8(12, 0x00); // base mid
+    gdtView.setUint8(13, 0xfa); // access: P=1, DPL=3, S=1, E=1, DC=0, RW=1, A=0
     // Flags: Granularity=1, Size=1 (32-bit), Limit[19:16] = 0xF → 0xCF
-    gdtView.setUint8(14, 0xcf);            // flags + limit high
-    gdtView.setUint8(15, 0x00);            // base high
+    gdtView.setUint8(14, 0xcf); // flags + limit high
+    gdtView.setUint8(15, 0x00); // base high
 
     // Entry 2: Data segment (selector 0x10)
     // Same as code but Type=0010 (read/write) → Access byte 0xF2
-    gdtView.setUint16(16, 0xffff, true);   // limit low
-    gdtView.setUint16(18, 0x0000, true);   // base low
-    gdtView.setUint8(20, 0x00);            // base mid
-    gdtView.setUint8(21, 0xf2);            // access: P=1, DPL=3, S=1, E=0, DC=0, RW=1, A=0
-    gdtView.setUint8(22, 0xcf);            // flags + limit high
-    gdtView.setUint8(23, 0x00);            // base high
+    gdtView.setUint16(16, 0xffff, true); // limit low
+    gdtView.setUint16(18, 0x0000, true); // base low
+    gdtView.setUint8(20, 0x00); // base mid
+    gdtView.setUint8(21, 0xf2); // access: P=1, DPL=3, S=1, E=0, DC=0, RW=1, A=0
+    gdtView.setUint8(22, 0xcf); // flags + limit high
+    gdtView.setUint8(23, 0x00); // base high
 
     // Write GDT to memory
     this.cpu.write_blob(gdt, GDT_ADDR);
@@ -141,10 +233,11 @@ export class V86Emu {
     this.cpu.gdtr_size[0] = 23;
     this.cpu.gdtr_offset[0] = GDT_ADDR;
 
-    // Load segment registers with proper selectors
-    // CS = 0x08 (code segment), all data segments = 0x10
-    // We can't directly set CS with a selector easily,
-    // so we use the internal segment arrays that multiboot already set up
+    this._restoreFlatSegments();
+  }
+
+  private _restoreFlatSegments(): void {
+    // CS = 0x08 (code segment), all data segments = 0x10.
     const CODE_SEL = 0x08;
     const DATA_SEL = 0x10;
 
@@ -171,7 +264,15 @@ export class V86Emu {
    */
   mem_write(addr: number, data: Uint8Array): void {
     this.cpu.write_blob(data, addr);
-    this.cpu.jit_dirty_cache(addr, addr + data.length);
+  }
+
+  mem_clear(addr: number, size: number): void {
+    this.mem_fill(addr, size, 0);
+  }
+
+  mem_fill(addr: number, size: number, value: number): void {
+    this.assert_memory_range(addr, size);
+    this.cpu.mem8.fill(value, addr, addr + size);
   }
 
   /**
@@ -179,6 +280,26 @@ export class V86Emu {
    */
   mem_read(addr: number, size: number): Uint8Array {
     return new Uint8Array(this.cpu.read_blob(addr, size));
+  }
+
+  mem_read_uint32(addr: number): number {
+    this.assert_memory_range(addr, 4);
+    const memory = this.cpu.mem8;
+    return (
+      memory[addr] |
+      (memory[addr + 1] << 8) |
+      (memory[addr + 2] << 16) |
+      (memory[addr + 3] << 24)
+    ) >>> 0;
+  }
+
+  mem_write_uint32(addr: number, value: number): void {
+    this.assert_memory_range(addr, 4);
+    const memory = this.cpu.mem8;
+    memory[addr] = value;
+    memory[addr + 1] = value >>> 8;
+    memory[addr + 2] = value >>> 16;
+    memory[addr + 3] = value >>> 24;
   }
 
   /**
@@ -213,28 +334,16 @@ export class V86Emu {
    * Install a hook at the given address.
    * Uses I/O port OUT instruction to trap into JavaScript.
    *
-   * We write the following x86 code at the address:
-   *   PUSH EDX        ; 52       ; save EDX (we need it for port number)
-   *   MOV DX, port    ; 66 BA pp pp  ; load hook port number
-   *   OUT DX, AL      ; EE       ; trigger I/O port write → JavaScript handler
-   * We write a simple OUT instruction at the hook address:
+   * Writes a simple OUT instruction at the hook address:
    *   OUT imm8, AL    ; E6 pp    ; trigger I/O port write → JavaScript handler
    *
    * Just 2 bytes. The callback is expected to handle the return (e.g., by calling ret()).
    * Since OUT doesn't modify any registers or the stack, get_arg/push/pop all work correctly.
    */
-  set_hook(
-    addr: number,
-    callback: HookCallback,
-    userData: any = null
-  ): number {
+  set_hook(addr: number, callback: HookCallback, userData: any = null): number {
     const port = this.nextHookPort++;
     if (port > 0xFF) {
-        // Fallback to 16-bit port if we run out of 8-bit ports.
-        // But for now, let's just use 8-bit and ensure we don't leak.
-        // Actually, we can just use 16-bit ports for all hooks to be safe.
-        // But that takes more bytes. 
-        // Let's just stick to 8-bit and fix the leak in emu_start.
+      throw new Error("too many emulator hooks");
     }
 
     // Save the original byte at the hook address
@@ -243,17 +352,15 @@ export class V86Emu {
     // Write the 2-byte trampoline: OUT imm8, AL
     const trampoline = new Uint8Array([0xe6, port & 0xFF]);
     this.cpu.write_blob(trampoline, addr);
-    this.cpu.jit_dirty_cache(addr, addr + 2);
 
-    const entry: HookEntry = { callback, originalBytes, userData, port };
+    const entry: HookEntry = { callback, originalBytes, userData };
     this.hooks.set(addr, entry);
-    this.portToHook.set(port, entry);
 
     // Register the I/O port handler
     this.cpu.io.register_write(port, this, (_value: number) => {
       entry.callback(this, entry.userData);
     });
-    
+
     return port;
   }
 
@@ -264,38 +371,43 @@ export class V86Emu {
     const hook = this.hooks.get(addr);
     if (hook) {
       this.cpu.write_blob(hook.originalBytes, addr);
-      this.cpu.jit_dirty_cache(addr, addr + 2);
       this.hooks.delete(addr);
-      this.portToHook.delete(hook.port);
-      // We don't unregister from cpu.io because v86 doesn't have an easy way 
-      // to unregister a single port, but we can reuse the port if we managed a pool.
     }
   }
 
   /**
    * Start emulation from `start` address until reaching `until` address.
+   *
+   * The stop trampoline is installed once and never toggled back to NOPs. v86
+   * may retain translated JIT blocks across calls; mutating executable bytes at
+   * the stop address without invalidating those blocks eventually mixes code
+   * compiled from the two byte patterns. A stable trampoline keeps guest memory
+   * and every warmed JIT block in agreement.
    */
   emu_start(start: number, until: number): void {
     this.set_eip(start);
     this._stopped = false;
 
-    // Install a temporary hook at the 'until' address to stop execution
-    const STOP_PORT = 0xDF; // Use a dedicated port for stopping to avoid leaks
-    
-    // Save original bytes locally
-    const originalBytes = new Uint8Array(this.cpu.read_blob(until, 2));
-    
-    // Write stop trampoline: OUT 0xDF, AL
-    this.cpu.write_blob(new Uint8Array([0xe6, STOP_PORT]), until);
-    this.cpu.jit_dirty_cache(until, until + 2);
-    
-    const stopHandler = (_value: number) => {
-        this._stopped = true;
-    };
-    this.cpu.io.register_write(STOP_PORT, this, stopHandler);
+    if (this.stopAddress === null) {
+      this.assert_memory_range(until, STOP_TRAMPOLINE.byteLength);
+      this.cpu.write_blob(STOP_TRAMPOLINE, until);
+      this.stopAddress = until;
+    } else if (this.stopAddress !== until) {
+      throw new Error(
+        `V86Emu stop address changed from 0x${this.stopAddress.toString(16)} to 0x${until.toString(16)}`
+      );
+    }
 
-    // Run the CPU in a tight loop until stopped
-    // Clear HLT state (multiboot entry point has HLT instruction)
+    if (!this.stopHandlerRegistered) {
+      this.cpu.io.register_write(STOP_PORT, this, (_value: number) => {
+        this._stopped = true;
+      });
+      this.stopHandlerRegistered = true;
+    }
+
+    // Run the CPU in a tight loop until stopped. The return area after the OUT
+    // instruction remains a NOP sled because a compiled v86 block can continue
+    // for a bounded distance after the port callback flips `_stopped`.
     this.cpu.in_hlt[0] = 0;
     try {
       while (!this._stopped) {
@@ -307,15 +419,8 @@ export class V86Emu {
       } else {
         throw e;
       }
-    } finally {
-        // Always restore original bytes and invalidate JIT
-        this.cpu.write_blob(originalBytes, until);
-        this.cpu.jit_dirty_cache(until, until + 2);
-        // We leave the STOP_PORT handler registered since it's harmless
     }
   }
-
-
 
   /**
    * Stop emulation.
@@ -330,26 +435,30 @@ export class V86Emu {
   reset_cpu(): void {
     // Reset general purpose registers to 0
     for (let i = 0; i < 8; i++) {
-        this.cpu.reg32[i] = 0;
+      this.cpu.reg32[i] = 0;
     }
-    
+
     // Reset flags: Bit 1 is always 1 in EFLAGS.
     this.cpu.flags[0] = 0x2;
-    
+
     // Clear HLT state
     this.cpu.in_hlt[0] = 0;
 
-    // Re-setup segments to ensure they are consistent
-    this._setupGDT();
+    // Restore segment state without rebuilding and rewriting the unchanged GDT.
+    this._restoreFlatSegments();
   }
 
   /**
    * Destroy the emulator and release resources.
    */
   async destroy(): Promise<void> {
-    if (this.emulator) {
-      await this.emulator.destroy();
-      this.emulator = null;
-    }
+    const emulator = this.emulator;
+    this._stopped = true;
+    this.hooks.clear();
+    this.cpu = null;
+    this.emulator = null;
+    this.stopHandlerRegistered = false;
+    this.stopAddress = null;
+    if (emulator) await emulator.destroy();
   }
 }

@@ -18,12 +18,15 @@ export function from_bytes_uint32(bytes: Uint8Array): number {
 }
 
 export function convert_sjis(str: string): Uint8Array {
-  const unicodeArray = Encoding.stringToCode(str);
-  const sjisArray = Encoding.convert(unicodeArray, {
+  // Passing the string directly keeps the intermediate Unicode data in a
+  // typed array. encoding-japanese returns a Uint16Array for this mode even
+  // though its type declaration says ArrayBuffer.
+  const sjisArray = Encoding.convert(str, {
     to: "SJIS",
     from: "UNICODE",
-  });
-  return new Uint8Array(sjisArray);
+    type: "arraybuffer",
+  }) as unknown as Uint16Array;
+  return Uint8Array.from(sjisArray);
 }
 
 export function uint8array_concat(a: Uint8Array, b: Uint8Array): Uint8Array {

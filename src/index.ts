@@ -1,19 +1,12 @@
 import JSZip from "jszip";
 import { V86Emu, REG_EAX, REG_ESP } from "./v86_emu.js";
 import { call, push } from "./x86_util.js";
-import {
-  convert_sjis,
-  from_bytes_uint32,
-  to_bytes_uint32,
-  uint8array_concat,
-} from "./util.js";
-import {
-  free_hook,
-  malloc_hook,
-} from "./clib_hook.js";
+import { convert_sjis } from "./util.js";
+import { free_hook, malloc_hook } from "./clib_hook.js";
 import {
   Heap,
-  NOP_CODE,
+  NOP,
+  align_to_0x1000,
   hook_lib_call,
   reg_read_uint32,
   reg_write_uint32,
@@ -63,50 +56,149 @@ const WASM_URL = new URL("../voices/v86.wasm", import.meta.url);
 export interface Options {
   memorySize?: number;
   wasmPath?: string;
+  heapSize?: number;
 }
 
+// The bundled DLL accepts up to 4094 Shift-JIS bytes. At the slowest speed,
+// all voices synthesize that engine boundary within this heap while retaining
+// headroom over the allocator's measured 22.1 MiB high-water mark.
+export const DEFAULT_HEAP_SIZE = 32 * 1024 * 1024;
+// Keep the relocated image clear of v86's multiboot entry at 1 MiB while
+// avoiding the original PE image base's 256 MiB address-space hole.
+const DEFAULT_LOAD_ADDRESS = 2 * 1024 * 1024;
+const STACK_SIZE = 64 * 1024;
+const RETURN_GUARD_SIZE = 1024 * 1024;
+const RETURN_SLED_SIZE = 512 * 1024;
+const PE_CACHE = new WeakMap<ArrayBuffer, ReturnType<typeof parsePE>>();
+
+function inspectPE(file: ArrayBuffer): ReturnType<typeof parsePE> {
+  const cached = PE_CACHE.get(file);
+  if (cached) return cached;
+  const pe = parsePE(file);
+  PE_CACHE.set(file, pe);
+  return pe;
+}
+
+const NATIVE_HOOK_MAP: Readonly<Record<string, number>> = {
+  strncmp: NATIVE_CLIB_SYMBOLS.strncmp,
+  strncpy: NATIVE_CLIB_SYMBOLS.strncpy,
+  strtok: NATIVE_CLIB_SYMBOLS.strtok,
+  strchr: NATIVE_CLIB_SYMBOLS.strchr,
+  stricmp: NATIVE_CLIB_SYMBOLS.stricmp,
+  _stricmp: NATIVE_CLIB_SYMBOLS.stricmp,
+  _initterm: NATIVE_CLIB_SYMBOLS._initterm,
+  initterm: NATIVE_CLIB_SYMBOLS._initterm,
+  __CxxFrameHandler: NATIVE_CLIB_SYMBOLS.__CxxFrameHandler,
+  DisableThreadLibraryCalls: NATIVE_CLIB_SYMBOLS.DisableThreadLibraryCalls,
+};
+
 export class AquesTalk {
-  readonly #dll_file;
+  readonly #dllImage: Uint8Array;
+  readonly #writableSections: readonly {
+    address: number;
+    bytes: Uint8Array;
+    zeroAddress: number;
+    zeroSize: number;
+  }[];
   readonly #emu;
 
-  #baseAddress = 0x1000_0000;
+  #baseAddress = 0;
   #aquesTalk_SyntheAddress = 0;
-  #iatHooks: { [key: string]: { rva: number; target: number } } = {};
   #adjustFdivTargetAddress = 0;
+  #returnAddress = 0;
+  #stackTop = 0;
 
-  readonly HEAP_ADDRESS = 0x2000_0000;
-  readonly HEAP_LENGTH = 0x1000_0000;
-  // init内で初期化するため、nullで初期化
+  readonly HEAP_ADDRESS: number;
+  readonly HEAP_LENGTH: number;
   #heap: Heap = null as unknown as Heap;
-  constructor(file: ArrayBuffer, emu: V86Emu) {
-    this.#dll_file = file;
+
+  constructor(
+    file: ArrayBuffer,
+    emu: V86Emu,
+    options: Pick<Options, "heapSize"> = {}
+  ) {
+    const pe = inspectPE(file);
+    const heapSize = options.heapSize ?? DEFAULT_HEAP_SIZE;
+    const loadAddress =
+      pe.baseRelocationOffsets.length > 0
+        ? DEFAULT_LOAD_ADDRESS
+        : pe.baseAddress;
+    if (!Number.isSafeInteger(heapSize) || heapSize <= 0) {
+      throw new RangeError(`invalid heap size: ${heapSize}`);
+    }
+    this.#dllImage = new Uint8Array(file).slice();
     this.#emu = emu;
-    this.#init();
+    this.#baseAddress = loadAddress;
+
+    if (loadAddress !== pe.baseAddress) {
+      const delta = loadAddress - pe.baseAddress;
+      const imageView = new DataView(
+        this.#dllImage.buffer,
+        this.#dllImage.byteOffset,
+        this.#dllImage.byteLength
+      );
+      for (const fileOffset of pe.baseRelocationOffsets) {
+        imageView.setUint32(
+          fileOffset,
+          imageView.getUint32(fileOffset, true) + delta,
+          true
+        );
+      }
+    }
+
+    this.#writableSections = pe.writableSections.map(section => {
+      const rawSize = Math.min(section.rawSize, section.virtualSize);
+      return {
+        address: loadAddress + section.virtualAddress,
+        bytes: this.#dllImage.subarray(
+          section.pointerToRawData,
+          section.pointerToRawData + rawSize
+        ),
+        zeroAddress: loadAddress + section.virtualAddress + rawSize,
+        zeroSize: Math.max(0, section.virtualSize - rawSize),
+      };
+    });
+    this.HEAP_ADDRESS = align_to_0x1000(loadAddress + pe.imageSize);
+    this.HEAP_LENGTH = heapSize;
+    this.#stackTop = this.HEAP_ADDRESS + heapSize + STACK_SIZE;
+
+    emu.assert_memory_range(loadAddress, this.#dllImage.byteLength);
+    emu.assert_memory_range(
+      this.HEAP_ADDRESS,
+      this.HEAP_LENGTH + STACK_SIZE
+    );
+    this.#init(pe);
   }
 
   #reset_esp() {
-    reg_write_uint32(this.#emu, REG_ESP, this.HEAP_ADDRESS + this.HEAP_LENGTH);
+    reg_write_uint32(this.#emu, REG_ESP, this.#stackTop);
   }
 
-  #init() {
+  #init(pe: ReturnType<typeof parsePE>) {
     const emu = this.#emu;
 
-    const pe = parsePE(this.#dll_file);
-    // DLL code expects BASE_ADDRESS typically 0x10000000.
-    // We use a hardcoded BASE_ADDRESS for simplicity as the original code did.
-    // However, we update it if the PE prefers something else, or just stick to 0x10000000.
-    // In f1/f2 it is 0x10000000.
-    this.#baseAddress = pe.baseAddress;
     this.#aquesTalk_SyntheAddress = this.#baseAddress + pe.aquesTalkSyntheRVA;
-    this.#iatHooks = pe.iatHooks;
-    this.#adjustFdivTargetAddress = pe.adjustFdivTarget; // IAT target RVAs are used as ABSOLUTE addresses by unlinked DLLs
+    this.#adjustFdivTargetAddress = pe.adjustFdivTarget;
 
-    // v86 has flat memory - no need for mem_map, just write directly
-    // Write the DLL into memory at baseAddress
-    emu.mem_write(this.#baseAddress, new Uint8Array(this.#dll_file));
-
-    // Initialize heap
     this.#heap = new Heap(emu, this.HEAP_ADDRESS, this.HEAP_LENGTH);
+    const nativeCodeAddress = this.#heap.set_mem_value(emu, NATIVE_CLIB_BIN);
+    // Keep dynamic allocations 1 MiB away from executable helper code. v86's
+    // JIT executes beyond the OUT stop instruction. Keep a 512 KiB NOP sled:
+    // 256 KiB corrupts warmed output, while this retains a 2x safety margin.
+    this.#returnAddress = this.#heap.allocate(RETURN_GUARD_SIZE);
+    emu.mem_fill(this.#returnAddress, RETURN_SLED_SIZE, NOP);
+    this.#heap.preserve_allocations();
+
+    const dllView = new DataView(
+      this.#dllImage.buffer,
+      this.#dllImage.byteOffset,
+      this.#dllImage.byteLength
+    );
+    for (const [name, offset] of Object.entries(NATIVE_HOOK_MAP)) {
+      const info = pe.iatHooks[name];
+      if (info) dllView.setUint32(info.rva, nativeCodeAddress + offset, true);
+    }
+    emu.mem_write(this.#baseAddress, this.#dllImage);
     this.#reset_esp();
 
     const hookMap: { [key: string]: (emu: V86Emu, ...args: any[]) => void } = {
@@ -114,115 +206,92 @@ export class AquesTalk {
       free: free_hook,
     };
 
-    for (const [name, info] of Object.entries(this.#iatHooks)) {
+    for (const [name, info] of Object.entries(pe.iatHooks)) {
       if (hookMap[name]) {
+        const callback =
+          name === "malloc"
+            ? (hookEmu: V86Emu, size: number) =>
+                this.#heap.try_allocate_zeroed(hookEmu, size)
+            : name === "free"
+              ? (_hookEmu: V86Emu, address: number) =>
+                  this.#heap.free(address)
+              : undefined;
         // We hook at the info.target address which is the unlinked address value from IAT.
         // The DLL code jumps to this address when calling imports.
-        hook_lib_call(
-          emu,
-          info.target,
-          hookMap[name],
-          name === "malloc"
-            ? (emu: V86Emu, value: Uint8Array) =>
-                this.#heap.set_mem_value(emu, value)
-            : undefined
-        );
+        hook_lib_call(emu, info.target, hookMap[name], callback);
       }
     }
 
     if (this.#adjustFdivTargetAddress) {
-      emu.mem_write(this.#adjustFdivTargetAddress, to_bytes_uint32(0));
+      emu.mem_write_uint32(this.#adjustFdivTargetAddress, 0);
     }
   }
 
   #reset() {
-    this.#heap.clear_heap(this.#emu);
+    this.#heap.reset_allocations();
     reg_write_uint32(this.#emu, REG_EAX, 0);
     this.#reset_esp();
   }
 
-  run(koe: string, speed: number = 100) {
+  #reset_writable_sections() {
+    for (const section of this.#writableSections) {
+      this.#emu.mem_write(section.address, section.bytes);
+      if (section.zeroSize > 0) {
+        this.#emu.mem_clear(section.zeroAddress, section.zeroSize);
+      }
+    }
+  }
+
+  run(koe: string, speed: number = 100): Uint8Array {
     const emu = this.#emu;
 
     // Reset CPU registers and segments before starting a new run
     emu.reset_cpu();
-    this.#reset_esp();
-
-    // Reload DLL memory to BASE_ADDRESS to reset any global state
-    emu.mem_write(this.#baseAddress, new Uint8Array(this.#dll_file));
-    // Reset _adjust_fdiv and other low-memory state
-    if (this.#adjustFdivTargetAddress) {
-      emu.mem_write(this.#adjustFdivTargetAddress, to_bytes_uint32(0));
-    }
-
-    // Write native CLIB code to heap
-    const native_code_addr = this.#heap.set_mem_value(emu, NATIVE_CLIB_BIN);
-
-    // Apply native hooks by overwriting IAT entries
-    const nativeHookMap: { [key: string]: number } = {
-      strncmp: NATIVE_CLIB_SYMBOLS.strncmp,
-      strncpy: NATIVE_CLIB_SYMBOLS.strncpy,
-      strtok: NATIVE_CLIB_SYMBOLS.strtok,
-      strchr: NATIVE_CLIB_SYMBOLS.strchr,
-      stricmp: NATIVE_CLIB_SYMBOLS.stricmp,
-      _stricmp: NATIVE_CLIB_SYMBOLS.stricmp,
-      _initterm: NATIVE_CLIB_SYMBOLS._initterm,
-      initterm: NATIVE_CLIB_SYMBOLS._initterm,
-      __CxxFrameHandler: NATIVE_CLIB_SYMBOLS.__CxxFrameHandler,
-      DisableThreadLibraryCalls: NATIVE_CLIB_SYMBOLS.DisableThreadLibraryCalls,
-    };
-
-    for (const [name, offset] of Object.entries(nativeHookMap)) {
-      const info = this.#iatHooks[name];
-      if (info) {
-        emu.mem_write(
-          this.#baseAddress + info.rva,
-          to_bytes_uint32(native_code_addr + offset)
-        );
-      }
-    }
-
-    const size = this.#heap.set_mem_value(emu, new Uint8Array(8).fill(0));
-    const koe_addr = this.#heap.set_mem_value(
-      emu,
-      uint8array_concat(convert_sjis(koe), new Uint8Array([0x0]))
-    );
-
-    push(emu, size);
-    push(emu, speed);
-    push(emu, koe_addr);
-
-    const return_fn_addr = this.#heap.set_mem_value(
-      emu,
-      new Uint8Array(1048576).fill(NOP_CODE[0])
-    );
-    emu.set_eip(return_fn_addr);
-    call(emu, this.#aquesTalk_SyntheAddress);
+    this.#reset();
 
     try {
-      emu.emu_start(emu.get_eip(), return_fn_addr);
-    } catch (e) {
-      console.error(e);
-      console.error(`error at: EIP: `, emu.get_eip().toString(16));
-      console.error(
-        `error at: ESP:`,
-        reg_read_uint32(emu, REG_ESP).toString(16)
-      );
+      // Only mutable PE sections can hold per-run global state. Reloading the
+      // executable and read-only sections copied ~100 KiB unnecessarily.
+      this.#reset_writable_sections();
+      // Reset _adjust_fdiv and other low-memory state
+      if (this.#adjustFdivTargetAddress) {
+        emu.mem_write_uint32(this.#adjustFdivTargetAddress, 0);
+      }
+
+      const size = this.#heap.allocate_zeroed(emu, 4);
+      const sjis = convert_sjis(koe);
+      const koeAddress = this.#heap.allocate(sjis.byteLength + 1);
+      emu.mem_write(koeAddress, sjis);
+      emu.mem_clear(koeAddress + sjis.byteLength, 1);
+
+      push(emu, size);
+      push(emu, speed);
+      push(emu, koeAddress);
+
+      emu.set_eip(this.#returnAddress);
+      call(emu, this.#aquesTalk_SyntheAddress);
+
+      try {
+        emu.emu_start(emu.get_eip(), this.#returnAddress);
+      } catch (error) {
+        console.error(error);
+        console.error(`error at: EIP: `, emu.get_eip().toString(16));
+        console.error(
+          `error at: ESP:`,
+          reg_read_uint32(emu, REG_ESP).toString(16)
+        );
+        throw error;
+      }
+
+      const sizeValue = emu.mem_read_uint32(size);
+      const returnValue = reg_read_uint32(emu, REG_EAX);
+      if (returnValue === 0) {
+        throw new Error(`AquesTalk_Synthe error. ERROR CODE: ${sizeValue}`);
+      }
+      return emu.mem_read(returnValue, sizeValue);
+    } finally {
       this.#reset();
-
-      throw e;
     }
-
-    const size_value = from_bytes_uint32(emu.mem_read(size, 4));
-    const return_value = reg_read_uint32(emu, REG_EAX);
-
-    if (return_value === 0) {
-      throw new Error(`AquesTalk_Synthe error. ERROR CODE: ${size_value}`);
-    }
-    const result = emu.mem_read(return_value, size_value);
-
-    this.#reset();
-    return result;
   }
 
   /**
@@ -242,33 +311,31 @@ export async function load(
   options: Options & { baseUrl?: string } = {}
 ) {
   const { zip, dll } = VOICE_MAP[voice];
-  const zipPath = options.baseUrl
-    ? new URL(VOICE_MAP[voice].zip.pathname.split("/").pop()!, options.baseUrl)
+  const { baseUrl, ...loadOptions } = options;
+  const zipPath = baseUrl
+    ? new URL(VOICE_MAP[voice].zip.pathname.split("/").pop()!, baseUrl)
         .href
     : zip.href;
 
-  // Default wasmPath resolution
-  if (!options.wasmPath) {
-    options.wasmPath = options.baseUrl
-      ? new URL("v86.wasm", options.baseUrl).href
-      : WASM_URL.href;
-  }
+  let wasmPath =
+    loadOptions.wasmPath ??
+    (baseUrl ? new URL("v86.wasm", baseUrl).href : WASM_URL.href);
 
   // Convert to local path if Node.js to avoid fetch/URL issues in v86
   if (
     typeof process !== "undefined" &&
     process.versions &&
     process.versions.node &&
-    options.wasmPath.startsWith("file://")
+    wasmPath.startsWith("file://")
   ) {
     const { fileURLToPath } = await import("url");
-    options.wasmPath = fileURLToPath(options.wasmPath);
+    wasmPath = fileURLToPath(wasmPath);
   }
 
-  return loadAquesTalk(zipPath, dll, options);
+  return loadAquesTalk(zipPath, dll, { ...loadOptions, wasmPath });
 }
 
-async function getData(url: string | URL): Promise<ArrayBuffer> {
+async function getData(url: string | URL): Promise<ArrayBuffer | Uint8Array> {
   const urlStr = url.toString();
   if (
     typeof process !== "undefined" &&
@@ -281,13 +348,12 @@ async function getData(url: string | URL): Promise<ArrayBuffer> {
     const filePath = urlStr.startsWith("file://")
       ? fileURLToPath(urlStr)
       : urlStr;
-    const buffer = await fs.readFile(filePath);
-    return buffer.buffer.slice(
-      buffer.byteOffset,
-      buffer.byteOffset + buffer.byteLength
-    );
+    return fs.readFile(filePath);
   }
   const response = await fetch(urlStr);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${urlStr}: ${response.status}`);
+  }
   return response.arrayBuffer();
 }
 
@@ -301,10 +367,38 @@ export async function loadAquesTalk(
   const ziproot = await zip.loadAsync(zipbin);
   const dllfile = await ziproot.files[dllpath].async("arraybuffer");
 
-  // Initialize v86 emulator
+  const pe = inspectPE(dllfile);
+  const heapSize = options.heapSize ?? DEFAULT_HEAP_SIZE;
+  const loadAddress =
+    pe.baseRelocationOffsets.length > 0 ? DEFAULT_LOAD_ADDRESS : pe.baseAddress;
+  if (!Number.isSafeInteger(heapSize) || heapSize <= 0) {
+    throw new RangeError(`invalid heap size: ${heapSize}`);
+  }
+  const minimumMemorySize = align_to_0x1000(
+    align_to_0x1000(loadAddress + pe.imageSize) + heapSize + STACK_SIZE
+  );
+  const memorySize = options.memorySize ?? minimumMemorySize;
+  if (
+    !Number.isSafeInteger(memorySize) ||
+    memorySize <= 0 ||
+    memorySize > 0xffff_ffff
+  ) {
+    throw new RangeError(`invalid memory size: ${memorySize}`);
+  }
+  if (memorySize < minimumMemorySize) {
+    throw new RangeError(
+      `memory size ${memorySize} is smaller than the required ${minimumMemorySize} bytes`
+    );
+  }
+
   const emu = new V86Emu();
-
-  await emu.init(options);
-
-  return new AquesTalk(dllfile, emu);
+  try {
+    await emu.init({ ...options, memorySize });
+    return new AquesTalk(dllfile, emu, {
+      heapSize,
+    });
+  } catch (error) {
+    await emu.destroy();
+    throw error;
+  }
 }
